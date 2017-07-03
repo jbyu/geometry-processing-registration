@@ -8,15 +8,18 @@
 #include <string>
 #include <iostream>
 
+#include "point_to_point_rigid_matching.h"
+
 int main(int argc, char *argv[])
 {
   // Load input meshes
   Eigen::MatrixXd OVX,VX,VY;
   Eigen::MatrixXi FX,FY;
   igl::read_triangle_mesh(
-    (argc>1?argv[1]:"../shared/data/max-registration-partial.obj"),OVX,FX);
+    //(argc>1?argv[1]:"../data/phenix2.obj"),OVX,FX);
+	(argc>1 ? argv[1] : "../data/max-registration-simple.obj"), OVX, FX);
   igl::read_triangle_mesh(
-    (argc>2?argv[2]:"../shared/data/max-registration-complete.obj"),VY,FY);
+    (argc>2 ? argv[2] : "../data/max-registration-complete.obj"),VY,FY);
 
   int num_samples = 100;
   bool show_samples = true;
@@ -73,6 +76,10 @@ int main(int argc, char *argv[])
   {
     VX = OVX;
     set_meshes();
+	if (show_samples)
+	{
+		set_points();
+	}
   };
   viewer.callback_pre_draw = [&](igl::viewer::Viewer &)->bool
   {
@@ -83,14 +90,23 @@ int main(int argc, char *argv[])
       ////////////////////////////////////////////////////////////////////////
       Eigen::Matrix3d R;
       Eigen::RowVector3d t;
-      icp_single_iteration(VX,FX,VY,FY,num_samples,method,R,t);
+      double dist = icp_single_iteration(VX,FX,VY,FY,num_samples,method,R,t);
+
       // Apply transformation to source mesh
       VX = ((VX*R).rowwise() + t).eval();
-      set_meshes();
+
+	  set_meshes();
       if(show_samples)
       {
         set_points();
       }
+#if 1
+	  static double last_dist = 1e6;
+	  double delta = abs(last_dist - dist);
+	  viewer.core.is_animating = (1e-4 < delta);
+	  last_dist = dist;
+	  std::cout << dist << ", " << delta << std::endl;
+#endif
     }
     return false;
   };
@@ -135,7 +151,7 @@ int main(int argc, char *argv[])
   };
 
   reset();
-  viewer.core.is_animating = true;
+  viewer.core.is_animating = false;
   viewer.core.point_size = 10;
   viewer.launch();
 

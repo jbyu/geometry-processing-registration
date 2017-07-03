@@ -28,7 +28,7 @@ enum ICPMethod
 // Outputs:
 //   R  3 by 3 rotation matrix
 //   t  3d translation vector 
-void icp_single_iteration(
+double icp_single_iteration(
   const Eigen::MatrixXd & VX,
   const Eigen::MatrixXi & FX,
   const Eigen::MatrixXd & VY,
