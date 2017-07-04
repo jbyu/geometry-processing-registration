@@ -10,12 +10,15 @@ void random_points_on_mesh(
 	// REPLACE WITH YOUR CODE:
 	X.resize(n,3);
 
-#if 0
+#if 1
 	Eigen::MatrixXd B;
 	Eigen::VectorXi FI;
 	igl::random_points_on_mesh(n, V, F, B, FI);
 	for (int i = 0; i < n; i++) {
 		const int idx = FI[i];
+		if (0 > idx) {
+			continue;
+		}
 		const Eigen::VectorXi &face = F.row(idx);
 		const Eigen::VectorXd &b = B.row(i);
 		const Eigen::VectorXd &v0 = V.row(face[0]);

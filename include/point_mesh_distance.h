@@ -17,6 +17,7 @@ void point_mesh_distance(
   const Eigen::MatrixXd & X,
   const Eigen::MatrixXd & VY,
   const Eigen::MatrixXi & FY,
+  const Eigen::MatrixXd & NY, // face normal
   Eigen::VectorXd & D,
   Eigen::MatrixXd & P,
   Eigen::MatrixXd & N);

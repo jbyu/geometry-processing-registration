@@ -5,6 +5,7 @@ void point_mesh_distance(
   const Eigen::MatrixXd & X,
   const Eigen::MatrixXd & VY,
   const Eigen::MatrixXi & FY,
+  const Eigen::MatrixXd & NY, // face normal
   Eigen::VectorXd & D,
   Eigen::MatrixXd & P,
   Eigen::MatrixXd & N)
@@ -18,8 +19,13 @@ void point_mesh_distance(
   D = (X-P).rowwise().norm();
 #endif
 
-	Eigen::VectorXd I;
+	Eigen::VectorXi I;
 	igl::point_mesh_squared_distance(
 	  X, VY, FY,
 	  D, I, P);
+
+
+	for (int i = 0; i < X.rows(); ++i) {
+		N.row(i) = NY.row(I[i]);
+	}
 }

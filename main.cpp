@@ -21,6 +21,11 @@ int main(int argc, char *argv[])
   igl::read_triangle_mesh(
     (argc>2 ? argv[2] : "../data/max-registration-complete.obj"),VY,FY);
 
+  Eigen::MatrixXd NY;
+  igl::per_face_normals(VY, FY, NY);
+
+  const int max_iteration = 50;
+  int num_iteration = 0;
   int num_samples = 100;
   bool show_samples = true;
   ICPMethod method = ICP_METHOD_POINT_TO_POINT;
@@ -60,7 +65,7 @@ int main(int argc, char *argv[])
     random_points_on_mesh(num_samples,VX,FX,X);
     Eigen::VectorXd D;
     Eigen::MatrixXd N;
-    point_mesh_distance(X,VY,FY,D,P,N);
+    point_mesh_distance(X,VY,FY,NY,D,P,N);
     Eigen::MatrixXd XP(X.rows()+P.rows(),3);
     XP<<X,P;
     Eigen::MatrixXd C(XP.rows(),3);
@@ -90,7 +95,7 @@ int main(int argc, char *argv[])
       ////////////////////////////////////////////////////////////////////////
       Eigen::Matrix3d R;
       Eigen::RowVector3d t;
-      double dist = icp_single_iteration(VX,FX,VY,FY,num_samples,method,R,t);
+      double delta = icp_single_iteration(VX,FX,VY,FY,NY,num_samples,method,R,t);
 
       // Apply transformation to source mesh
       VX = ((VX*R).rowwise() + t).eval();
@@ -101,11 +106,9 @@ int main(int argc, char *argv[])
         set_points();
       }
 #if 1
-	  static double last_dist = 1e6;
-	  double delta = abs(last_dist - dist);
-	  viewer.core.is_animating = (1e-4 < delta);
-	  last_dist = dist;
-	  std::cout << dist << ", " << delta << std::endl;
+	  ++num_iteration;
+	  viewer.core.is_animating = (1e-5 < abs(delta)) && (max_iteration > num_iteration);
+	  std::cout << delta << std::endl;
 #endif
     }
     return false;
@@ -116,6 +119,7 @@ int main(int argc, char *argv[])
     switch(key)
     {
       case ' ':
+		num_iteration = 0;
         viewer.core.is_animating ^= 1;
         break;
       case 'H':

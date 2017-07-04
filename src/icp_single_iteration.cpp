@@ -9,6 +9,7 @@ double icp_single_iteration(
   const Eigen::MatrixXi & FX,
   const Eigen::MatrixXd & VY,
   const Eigen::MatrixXi & FY,
+  const Eigen::MatrixXd & NY, // face normal
   const int num_samples,
   const ICPMethod method,
   Eigen::Matrix3d & R,
@@ -23,11 +24,22 @@ double icp_single_iteration(
   random_points_on_mesh(num_samples, VX, FX, X);
   Eigen::VectorXd D;
   Eigen::MatrixXd N;
-  point_mesh_distance(X, VY, FY, D, P, N);
+  point_mesh_distance(X, VY, FY, NY, D, P, N);
 
+  double error_before = D.sum();
+  //double error_before = (X - P).rowwise().norm().sum();
 
   point_to_point_rigid_matching(X, P, R, t);
+
+  // Apply transformation to source mesh
+  auto X2 = ((X*R).rowwise() + t).eval();
+  point_mesh_distance(X2, VY, FY, NY, D, P, N);
+  double error_after = D.sum();
+  //double error_after = (X2 - P).rowwise().norm().sum();
+
+  //std::cout << error_before << std::endl;
+  //std::cout << error_after << std::endl;
   //std::cout << R << std::endl;
   //std::cout << t << std::endl;
-  return D.sum();
+  return error_before - error_after;
 }
