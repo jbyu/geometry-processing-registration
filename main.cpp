@@ -10,6 +10,9 @@
 
 #include "point_to_point_rigid_matching.h"
 
+Eigen::MatrixXd NFY;
+Eigen::MatrixXd NVY;
+
 int main(int argc, char *argv[])
 {
   // Load input meshes
@@ -19,12 +22,12 @@ int main(int argc, char *argv[])
     //(argc>1?argv[1]:"../data/phenix2.obj"),OVX,FX);
 	(argc>1 ? argv[1] : "../data/max-registration-simple.obj"), OVX, FX);
   igl::read_triangle_mesh(
-    (argc>2 ? argv[2] : "../data/max-registration-complete.obj"),VY,FY);
+    (argc>2 ? argv[2] : "../data/max-registration-complete.obj"), VY, FY);
 
-  Eigen::MatrixXd NY;
-  igl::per_face_normals(VY, FY, NY);
+  igl::per_face_normals(VY, FY, NFY);
+  igl::per_vertex_normals(VY, FY, NVY);
 
-  const int max_iteration = 50;
+  const int max_iteration = 100;
   int num_iteration = 0;
   int num_samples = 100;
   bool show_samples = true;
@@ -65,7 +68,7 @@ int main(int argc, char *argv[])
     random_points_on_mesh(num_samples,VX,FX,X);
     Eigen::VectorXd D;
     Eigen::MatrixXd N;
-    point_mesh_distance(X,VY,FY,NY,D,P,N);
+    point_mesh_distance(X,VY,FY,D,P,N);
     Eigen::MatrixXd XP(X.rows()+P.rows(),3);
     XP<<X,P;
     Eigen::MatrixXd C(XP.rows(),3);
@@ -95,7 +98,7 @@ int main(int argc, char *argv[])
       ////////////////////////////////////////////////////////////////////////
       Eigen::Matrix3d R;
       Eigen::RowVector3d t;
-      double delta = icp_single_iteration(VX,FX,VY,FY,NY,num_samples,method,R,t);
+      double delta = icp_single_iteration(VX,FX,VY,FY,num_samples,method,R,t);
 
       // Apply transformation to source mesh
       VX = ((VX*R).rowwise() + t).eval();
@@ -108,7 +111,8 @@ int main(int argc, char *argv[])
 #if 1
 	  ++num_iteration;
 	  viewer.core.is_animating = (1e-5 < abs(delta)) && (max_iteration > num_iteration);
-	  std::cout << delta << std::endl;
+	  std::cout << num_iteration <<":"<< delta << std::endl;
+	  //viewer.core.is_animating = false;
 #endif
     }
     return false;

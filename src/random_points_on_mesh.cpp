@@ -7,8 +7,6 @@ void random_points_on_mesh(
   const Eigen::MatrixXi & F,
   Eigen::MatrixXd & X)
 {
-	X = V;
-	return;
 	// REPLACE WITH YOUR CODE:
 	X.resize(n,3);
 #if 1

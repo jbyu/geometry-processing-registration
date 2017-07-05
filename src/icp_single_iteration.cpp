@@ -2,6 +2,7 @@
 #include "random_points_on_mesh.h"
 #include "point_mesh_distance.h"
 #include "point_to_point_rigid_matching.h"
+#include "point_to_plane_rigid_matching.h"
 #include <iostream>
 
 double icp_single_iteration(
@@ -9,7 +10,6 @@ double icp_single_iteration(
   const Eigen::MatrixXi & FX,
   const Eigen::MatrixXd & VY,
   const Eigen::MatrixXi & FY,
-  const Eigen::MatrixXd & NY, // face normal
   const int num_samples,
   const ICPMethod method,
   Eigen::Matrix3d & R,
@@ -24,16 +24,24 @@ double icp_single_iteration(
   random_points_on_mesh(num_samples, VX, FX, X);
   Eigen::VectorXd D;
   Eigen::MatrixXd N;
-  point_mesh_distance(X, VY, FY, NY, D, P, N);
+  point_mesh_distance(X, VY, FY, D, P, N);
 
   double error_before = D.sum();
   //double error_before = (X - P).rowwise().norm().sum();
 
-  point_to_point_rigid_matching(X, P, R, t);
+  switch (method) {
+  default:
+  case ICP_METHOD_POINT_TO_POINT:
+	  point_to_point_rigid_matching(X, P, R, t);
+	  break;
+  case ICP_METHOD_POINT_TO_PLANE:
+	  point_to_plane_rigid_matching(X, P, N, R, t);
+	  break;
+  }
 
   // Apply transformation to source mesh
   auto X2 = ((X*R).rowwise() + t).eval();
-  point_mesh_distance(X2, VY, FY, NY, D, P, N);
+  point_mesh_distance(X2, VY, FY, D, P, N);
   double error_after = D.sum();
   //double error_after = (X2 - P).rowwise().norm().sum();
 

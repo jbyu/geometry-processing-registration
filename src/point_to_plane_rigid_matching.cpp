@@ -12,7 +12,7 @@ void point_to_plane_rigid_matching(
   // Replace with your code
   R = Eigen::Matrix3d::Identity();
   t = Eigen::RowVector3d::Zero();
-#if 1
+
   const int size = X.rows();
   Eigen::MatrixXd A(size, 6);
   Eigen::VectorXd B(size);
@@ -53,51 +53,4 @@ void point_to_plane_rigid_matching(
   t(0) = opt(3);
   t(1) = opt(4);
   t(2) = opt(5);
-#else
-  typedef Eigen::Matrix<double, 6, 6> Matrix66;
-  typedef Eigen::Matrix<double, 6, 1> Vector6;
-  typedef Eigen::Block<Matrix66, 3, 3> Block33;
-
-  /// Prepare LHS and RHS
-  Matrix66 LHS = Matrix66::Zero();
-  Vector6 RHS = Vector6::Zero();
-  Block33 TL = LHS.topLeftCorner<3, 3>();
-  Block33 TR = LHS.topRightCorner<3, 3>();
-  Block33 BR = LHS.bottomRightCorner<3, 3>();
-  Eigen::MatrixXd C = Eigen::MatrixXd::Zero(X.rows(), 3);
-
-  {
-	  for (int i = 0; i<X.rows(); i++) {
-		  const Eigen::RowVector3d& src = X.row(i);
-		  const Eigen::RowVector3d& normal = N.row(i);
-
-		  C.row(i) = src.cross(normal);
-	  }
-	  {
-		  for (int i = 0; i<X.rows(); i++)
-			  TL.selfadjointView<Eigen::Upper>().rankUpdate(C.row(i), 1);
-
-		  for (int i = 0; i<X.rows(); i++)
-			  TR += (C.row(i) * N.row(i).transpose());
-
-		  for (int i = 0; i<X.rows(); i++)
-			  BR.selfadjointView<Eigen::Upper>().rankUpdate(N.row(i), 1);
-
-		  for (int i = 0; i<C.rows(); i++) {
-			  double dist_to_plane = -((X.row(i) - P.row(i)).dot(N.row(i)) - 0)*1;
-			  RHS.head<3>() += C.row(i)*dist_to_plane;
-			  RHS.tail<3>() += N.row(i)*dist_to_plane;
-		  }
-	  }
-  }
-  LHS = LHS.selfadjointView<Eigen::Upper>();
-  /// Compute transformation
-  Eigen::Affine3d transformation;
-  Eigen::LDLT<Matrix66> ldlt(LHS);
-  RHS = ldlt.solve(RHS);
-  transformation = Eigen::AngleAxisd(RHS(0), Eigen::Vector3d::UnitX()) *
-	  Eigen::AngleAxisd(RHS(1), Eigen::Vector3d::UnitY()) *
-	  Eigen::AngleAxisd(RHS(2), Eigen::Vector3d::UnitZ());
-  transformation.translation() = RHS.tail<3>();
-#endif
 }

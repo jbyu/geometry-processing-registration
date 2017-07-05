@@ -33,7 +33,6 @@ double icp_single_iteration(
   const Eigen::MatrixXi & FX,
   const Eigen::MatrixXd & VY,
   const Eigen::MatrixXi & FY,
-  const Eigen::MatrixXd & NY, // face normal
   const int num_samples,
   const ICPMethod method,
   Eigen::Matrix3d & R,
