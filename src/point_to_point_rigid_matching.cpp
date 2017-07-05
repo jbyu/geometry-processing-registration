@@ -14,20 +14,12 @@ void point_to_point_rigid_matching(
 	auto cx = X.colwise().mean();
 	auto cp = P.colwise().mean();
 	
-	Eigen::MatrixXd ox = X;
-	int sizeX = ox.rows();
-	for (int i = 0; i < sizeX; ++i) {
-		ox.row(i) -= cx;
-	}
-
-	Eigen::MatrixXd op = P;
-	int sizeP = op.rows();
-	for (int i = 0; i < sizeP; ++i) {
-		op.row(i) -= cp;
-	}
+	Eigen::MatrixXd ox = (X.rowwise() - cx).eval();
+	Eigen::MatrixXd op = (P.rowwise() - cp).eval();
 
 	Eigen::MatrixXd S = op.transpose()*ox;
 	igl::fit_rotations(S, true, R);
+
 	t = cp - cx * R;
 }
 
