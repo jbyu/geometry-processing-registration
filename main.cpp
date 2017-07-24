@@ -8,15 +8,17 @@
 #include <string>
 #include <iostream>
 
-#include "point_to_point_rigid_matching.h"
+#include "mesh_deformation.h"
 
 Eigen::MatrixXd NFY;
 Eigen::MatrixXd NVY;
 
 int main(int argc, char *argv[])
 {
+  srand(time(0));
+
   // Load input meshes
-  Eigen::MatrixXd OVX,VX,VY;
+  Eigen::MatrixXd OVX,VX,VY,OVY;
   Eigen::MatrixXi FX,FY;
   igl::read_triangle_mesh(
     //(argc>1?argv[1]:"../data/phenix2.obj"),OVX,FX);
@@ -27,11 +29,27 @@ int main(int argc, char *argv[])
   igl::per_face_normals(VY, FY, NFY);
   igl::per_vertex_normals(VY, FY, NVY);
 
-  const int max_iteration = 100;
+  // Find the bounding box and normalize data
+  Eigen::Vector3d m = OVX.colwise().minCoeff();
+  Eigen::Vector3d M = OVX.colwise().maxCoeff();
+  float inv_scale = 2.f / (M[0] - m[0]);
+  OVX *= inv_scale *0.9f;
+  Eigen::RowVector3d offset(0, 0, 1);
+  OVX.rowwise() += offset;
+
+  m = VY.colwise().minCoeff();
+  M = VY.colwise().maxCoeff();
+  inv_scale = 2.f / (M[0] - m[0]);
+  VY *= inv_scale;
+
+  //backup vertices
+  OVY = VY;
+
+  const int max_iteration = 32;
   int num_iteration = 0;
   int num_samples = 100;
   bool show_samples = true;
-  ICPMethod method = ICP_METHOD_POINT_TO_POINT;
+  ICPMethod method = ICP_METHOD_POINT_TO_PLANE;
 
   igl::viewer::Viewer viewer;
   std::cout<<R"(
@@ -47,20 +65,43 @@ int main(int argc, char *argv[])
   // predefined colors
   const Eigen::RowVector3d orange(1.0,0.7,0.2);
   const Eigen::RowVector3d blue(0.2,0.3,0.8);
-  const auto & set_meshes = [&]()
+  const auto & set_meshes = [&](int mode = 0)
   {
-    // Concatenate meshes into one big mesh
-    Eigen::MatrixXd V(VX.rows()+VY.rows(),VX.cols());
-    V << VX, VY;
-    Eigen::MatrixXi F(FX.rows()+FY.rows(),FX.cols());
-    F<<FX,FY.array()+VX.rows();
-    viewer.data.clear();
-    viewer.data.set_mesh(V,F);
-    // Assign orange and blue colors to each mesh's faces
-    Eigen::MatrixXd C(F.rows(),3);
-    C.topLeftCorner(FX.rows(),3).rowwise() = orange;
-    C.bottomLeftCorner(FY.rows(),3).rowwise() = blue;
-    viewer.data.set_colors(C);
+	  viewer.data.clear();
+	  switch (mode) {
+	  default:
+	  case 0:
+	  {
+		  // Concatenate meshes into one big mesh
+		  Eigen::MatrixXd V(VX.rows() + VY.rows(), VX.cols());
+		  V << VX, VY;
+		  Eigen::MatrixXi F(FX.rows() + FY.rows(), FX.cols());
+		  F << FX, FY.array() + VX.rows();
+		  viewer.data.set_mesh(V, F);
+		  // Assign orange and blue colors to each mesh's faces
+		  Eigen::MatrixXd C(F.rows(), 3);
+		  C.topLeftCorner(FX.rows(), 3).rowwise() = orange;
+		  C.bottomLeftCorner(FY.rows(), 3).rowwise() = blue;
+		  viewer.data.set_colors(C);
+	  }
+		  break;
+	  case 1:
+	  {
+		  viewer.data.set_mesh(VX, FX);
+		  Eigen::MatrixXd C(FX.rows(), 3);
+		  C.rowwise() = orange;
+		  viewer.data.set_colors(C);
+	  }
+		  break;
+	  case 2:
+	  {
+		  viewer.data.set_mesh(VY, FY);
+		  Eigen::MatrixXd C(FY.rows(), 3);
+		  C.rowwise() = blue;
+		  viewer.data.set_colors(C);
+	  }
+	  break;
+	  }
   };
   const auto & set_points = [&]()
   {
@@ -83,6 +124,7 @@ int main(int argc, char *argv[])
   const auto & reset = [&]()
   {
     VX = OVX;
+	VY = OVY;
     set_meshes();
 	if (show_samples)
 	{
@@ -110,7 +152,7 @@ int main(int argc, char *argv[])
       }
 #if 1
 	  ++num_iteration;
-	  viewer.core.is_animating = (1e-5 < abs(delta)) && (max_iteration > num_iteration);
+	  viewer.core.is_animating = (1e-3 < abs(delta)) && (max_iteration > num_iteration);
 	  std::cout << num_iteration <<":"<< delta << std::endl;
 	  //viewer.core.is_animating = false;
 #endif
@@ -152,7 +194,47 @@ int main(int argc, char *argv[])
       case 's':
         num_samples = (num_samples/2)+1;
         break;
-      default:
+	  case '0':
+		  set_meshes(0);
+		  break;
+	  case '1':
+		  set_meshes(1);
+		  break;
+	  case '2':
+		  set_meshes(2);
+		  break;
+#if 1
+	  case 'i':
+		  deform_init(VY, FY, VX, FX);
+		  break;
+	  case 'o':
+	  {
+		  Eigen::MatrixXd OY;
+		  deform_solve(OY,
+			  VY,
+			  VX,
+			  FX);
+		  VY = OY;
+		  set_meshes(2);
+	  }
+		  break;
+#else
+	  case 'i':
+		  deform_init(VX, FX, VY, FY);
+		  break;
+	  case 'o':
+	  {
+		  Eigen::MatrixXd OY;
+		  deform_solve(OY,
+			  VX,
+			  VY,
+			  FY);
+		  VX = OY;
+		  set_meshes(1);
+	  }
+	  break;
+#endif
+	  default:
         return false;
     }
     return true;
@@ -162,6 +244,6 @@ int main(int argc, char *argv[])
   viewer.core.is_animating = false;
   viewer.core.point_size = 10;
   viewer.launch();
-
+  deform_terminate();
   return EXIT_SUCCESS;
 }
