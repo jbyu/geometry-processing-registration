@@ -2,8 +2,6 @@
 #define MESH_DEFORMATION_H
 #include <Eigen/Core>
 
-void deform_terminate();
-
 void deform_init(
 	const Eigen::MatrixXd & sourceVertices,
 	const Eigen::MatrixXi & sourceFaces,

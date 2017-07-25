@@ -244,6 +244,5 @@ int main(int argc, char *argv[])
   viewer.core.is_animating = false;
   viewer.core.point_size = 10;
   viewer.launch();
-  deform_terminate();
   return EXIT_SUCCESS;
 }

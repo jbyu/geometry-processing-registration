@@ -1,6 +1,6 @@
 #include "mesh_deformation.h"
-#include "point_mesh_distance.h"
 #include <igl/random_points_on_mesh.h>
+#include <igl/point_mesh_squared_distance.h>
 #include <igl/arap.h>
 #include <igl/colon.h>
 #include <algorithm>
@@ -11,16 +11,82 @@ Eigen::VectorXi S;
 Eigen::VectorXi b;
 
 #define kThreshold 0.01f
+#if 1
+void deform_init(
+	const Eigen::MatrixXd & sourceVertices,
+	const Eigen::MatrixXi & sourceFaces,
+	const Eigen::MatrixXd & targetVertices,
+	const Eigen::MatrixXi & targetFaces)
+{
+	// random sampling on target
+	//const int num_sample = 100;
+	const int num_sample = sourceVertices.rows()/2;
+	Eigen::MatrixXd B;
+	Eigen::VectorXi FI;
+	igl::random_points_on_mesh(num_sample, targetVertices, targetFaces, B, FI);
 
-void deform_terminate() {
-	/*
-	if (arap_data) {
-		delete arap_data;
-		arap_data = nullptr;
+	std::vector<int> vec;
+	vec.reserve(FI.size());
+	for (int i = 0, c = FI.size(); i < c; ++i) {
+		const int fidx = FI[i];
+		if (0 > fidx) {
+			continue;
+		}
+		const int idx = targetFaces.row(fidx)[0];
+		vec.push_back(idx);
 	}
-	*/
+
+	Eigen::MatrixXd X;
+	X = Eigen::MatrixXd::Zero(vec.size(), targetVertices.cols());
+	for (int i = 0, c = FI.size(); i < c; ++i) {
+		X.row(i) = targetVertices.row(vec[i]);
+	}
+
+	// find closet points on source
+	Eigen::VectorXd D;
+	Eigen::VectorXi I;
+	Eigen::MatrixXd C;
+	igl::point_mesh_squared_distance(
+		X, sourceVertices, sourceFaces,
+		D, I, C);
+
+	vec.clear();
+	vec.reserve(I.size());
+	for (int i = 0, c = I.size(); i < c; ++i) {
+		vec.push_back(sourceFaces.row(I[i])[0]);
+	}
+	//Just using vector, sort + unique
+	std::sort(vec.begin(), vec.end());
+	vec.erase(unique(vec.begin(), vec.end()), vec.end());
+
+	b.resize(vec.size());
+	for (int i = 0, c = vec.size(); i < c; ++i) {
+		b[i] = vec[i];
+	}
+	//std::cout << b << std::endl;
+
+	igl::arap_precomputation(sourceVertices, sourceFaces, sourceVertices.cols(), b, arap_data);
 }
 
+void deform_solve(Eigen::MatrixXd & output,
+	const Eigen::MatrixXd & sourceVertices,
+	const Eigen::MatrixXd & targetVertices,
+	const Eigen::MatrixXi & targetFaces)
+{
+	Eigen::MatrixXd X;
+	X = Eigen::MatrixXd::Zero(b.size(), sourceVertices.cols());
+	for (int i = 0, c = b.size(); i < c; ++i) {
+		X.row(i) = sourceVertices.row(b(i));
+	}
+	Eigen::VectorXd D;
+	Eigen::VectorXi I;
+	Eigen::MatrixXd C;
+	igl::point_mesh_squared_distance(
+		X, targetVertices, targetFaces,
+		D, I, C);
+	igl::arap_solve(C, arap_data, output);
+}
+#else
 void deform_init(
 	const Eigen::MatrixXd & sourceVertices,
 	const Eigen::MatrixXi & sourceFaces,
@@ -89,4 +155,5 @@ void deform_solve(Eigen::MatrixXd & output,
 #endif
 }
 
-//igl::arap_solve(bc, arap_data, U);
+#endif
+
