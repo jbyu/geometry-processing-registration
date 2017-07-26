@@ -19,8 +19,11 @@ void deform_init(
 	const Eigen::MatrixXi & targetFaces)
 {
 	// random sampling on target
-	//const int num_sample = 100;
-	const int num_sample = sourceVertices.rows()/2;
+#if 0
+	const int num_sample = 100;
+#else
+	const int num_sample = targetVertices.rows();
+#endif
 	Eigen::MatrixXd B;
 	Eigen::VectorXi FI;
 	igl::random_points_on_mesh(num_sample, targetVertices, targetFaces, B, FI);
@@ -38,7 +41,7 @@ void deform_init(
 
 	Eigen::MatrixXd X;
 	X = Eigen::MatrixXd::Zero(vec.size(), targetVertices.cols());
-	for (int i = 0, c = FI.size(); i < c; ++i) {
+	for (int i = 0, c = vec.size(); i < c; ++i) {
 		X.row(i) = targetVertices.row(vec[i]);
 	}
 
@@ -68,6 +71,9 @@ void deform_init(
 	igl::arap_precomputation(sourceVertices, sourceFaces, sourceVertices.cols(), b, arap_data);
 }
 
+float stiffness = 0.5f;
+float delta = 0.1f;
+
 void deform_solve(Eigen::MatrixXd & output,
 	const Eigen::MatrixXd & sourceVertices,
 	const Eigen::MatrixXd & targetVertices,
@@ -84,6 +90,11 @@ void deform_solve(Eigen::MatrixXd & output,
 	igl::point_mesh_squared_distance(
 		X, targetVertices, targetFaces,
 		D, I, C);
+#if 1
+	C = C * (1-stiffness) + X*stiffness;
+	//stiffness -= delta;
+	//if (stiffness < 0) stiffness = 0;
+#endif
 	igl::arap_solve(C, arap_data, output);
 }
 #else

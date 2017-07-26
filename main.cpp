@@ -2,8 +2,12 @@
 #include "icp_single_iteration.h"
 #include "random_points_on_mesh.h"
 #include "point_mesh_distance.h"
+#include "point_to_point_rigid_matching.h"
+
 #include <igl/read_triangle_mesh.h>
 #include <igl/viewer/Viewer.h>
+#include <igl/readDMAT.h>
+
 #include <Eigen/Core>
 #include <string>
 #include <iostream>
@@ -21,29 +25,72 @@ int main(int argc, char *argv[])
   Eigen::MatrixXd OVX,VX,VY,OVY;
   Eigen::MatrixXi FX,FY;
   igl::read_triangle_mesh(
-    //(argc>1?argv[1]:"../data/phenix2.obj"),OVX,FX);
 	(argc>1 ? argv[1] : "../data/max-registration-simple.obj"), OVX, FX);
   igl::read_triangle_mesh(
     (argc>2 ? argv[2] : "../data/max-registration-complete.obj"), VY, FY);
 
+  Eigen::MatrixXi I;
+  Eigen::MatrixXd target_landmarks;
+  igl::read_triangle_mesh(
+	  (argc>3 ? argv[3] : "../data/male_feature.obj"), target_landmarks, I);
+
+  Eigen::MatrixXd template_landmarks;
+  igl::readDMAT("../data/head.dmat", I);
+  template_landmarks.resize(I.rows(), 3);
+  for (int i = 0, c = I.rows(); i < c; ++i) {
+	  template_landmarks.row(i) = VY.row(I.row(i)[0]);
+  }
+
   igl::per_face_normals(VY, FY, NFY);
   igl::per_vertex_normals(VY, FY, NVY);
 
+#if 1
   // Find the bounding box and normalize data
-  Eigen::Vector3d m = OVX.colwise().minCoeff();
-  Eigen::Vector3d M = OVX.colwise().maxCoeff();
-  float inv_scale = 2.f / (M[0] - m[0]);
-  OVX *= inv_scale *0.9f;
-  Eigen::RowVector3d offset(0, 0, 1);
+  Eigen::Vector3d m = VY.colwise().minCoeff();
+  Eigen::Vector3d M = VY.colwise().maxCoeff();
+  Eigen::Vector3d c = (m + M)*0.5f;
+  float scale = (M[0] - m[0])*0.9;
+
+  m = OVX.colwise().minCoeff();
+  M = OVX.colwise().maxCoeff();
+  float inv_scale = scale / (M[0] - m[0]);
+  Eigen::RowVector3d offset(c[0], c[1], c[2]+1);
+  OVX *= inv_scale;
   OVX.rowwise() += offset;
 
-  m = VY.colwise().minCoeff();
-  M = VY.colwise().maxCoeff();
-  inv_scale = 2.f / (M[0] - m[0]);
-  VY *= inv_scale;
+#else
+	// Find the bounding box and normalize data
+	Eigen::Vector3d m = template_landmarks.colwise().minCoeff();
+	Eigen::Vector3d M = template_landmarks.colwise().maxCoeff();
+	Eigen::Vector3d c = (m + M)*0.5f;
+	float scale = (M[0] - m[0])*0.9;
 
-  //backup vertices
-  OVY = VY;
+	m = target_landmarks.colwise().minCoeff();
+	M = target_landmarks.colwise().maxCoeff();
+	float inv_scale = scale / (M[0] - m[0]);
+	Eigen::RowVector3d offset(c[0], c[1], c[2] + 1);
+
+	OVX *= inv_scale;
+	OVX.rowwise() += offset;
+#endif
+
+#if 0
+	target_landmarks *= inv_scale;
+	target_landmarks.rowwise() += offset;
+
+	// align landmarks
+	Eigen::Matrix3d R;
+	Eigen::RowVector3d  t;
+	//for (int i = 0; i < 100; ++i) 
+	{
+		point_to_point_rigid_matching(target_landmarks, template_landmarks, R, t);
+		target_landmarks = ((target_landmarks*R).rowwise() + t).eval();
+		OVX = ((OVX*R).rowwise() + t).eval();
+	}
+#endif
+
+	//backup vertices
+	OVY = VY;
 
   const int max_iteration = 32;
   int num_iteration = 0;
