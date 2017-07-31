@@ -2,6 +2,13 @@
 #define MESH_DEFORMATION_H
 #include <Eigen/Core>
 
+void deform_match(
+	Eigen::MatrixXd & sourceVertices,
+	const Eigen::MatrixXi & sourceFaces,
+	const Eigen::MatrixXi & source_landmarks,
+	const Eigen::MatrixXd & targetVertices,
+	const Eigen::MatrixXi & target_landmarks);
+
 void deform_init(
 	const Eigen::MatrixXd & sourceVertices,
 	const Eigen::MatrixXi & sourceFaces,

@@ -16,6 +16,9 @@
 
 Eigen::MatrixXd NFY;
 Eigen::MatrixXd NVY;
+Eigen::MatrixXi target_landmarks;
+Eigen::MatrixXi template_landmarks;
+const int nojaw = 66;
 
 int main(int argc, char *argv[])
 {
@@ -28,36 +31,31 @@ int main(int argc, char *argv[])
 	(argc>1 ? argv[1] : "../data/max-registration-simple.obj"), OVX, FX);
   igl::read_triangle_mesh(
     (argc>2 ? argv[2] : "../data/max-registration-complete.obj"), VY, FY);
-
+/*
   Eigen::MatrixXi I;
   Eigen::MatrixXd target_landmarks;
   igl::read_triangle_mesh(
 	  (argc>3 ? argv[3] : "../data/male_feature.obj"), target_landmarks, I);
+*/
 
-  Eigen::MatrixXd template_landmarks;
-  igl::readDMAT("../data/head.dmat", I);
-  template_landmarks.resize(I.rows(), 3);
-  for (int i = 0, c = I.rows(); i < c; ++i) {
-	  template_landmarks.row(i) = VY.row(I.row(i)[0]);
-  }
 
   igl::per_face_normals(VY, FY, NFY);
   igl::per_vertex_normals(VY, FY, NVY);
-
+  
 #if 1
   // Find the bounding box and normalize data
   Eigen::Vector3d m = VY.colwise().minCoeff();
   Eigen::Vector3d M = VY.colwise().maxCoeff();
   Eigen::Vector3d c = (m + M)*0.5f;
-  float scale = (M[0] - m[0])*0.9;
+  float scale = (M[0] - m[0]);
 
   m = OVX.colwise().minCoeff();
   M = OVX.colwise().maxCoeff();
   float inv_scale = scale / (M[0] - m[0]);
-  Eigen::RowVector3d offset(c[0], c[1], c[2]+1);
+  Eigen::RowVector3d offset(c[0], c[1], c[2] + 2);
   OVX *= inv_scale;
   OVX.rowwise() += offset;
-
+#elif 1
 #else
 	// Find the bounding box and normalize data
 	Eigen::Vector3d m = template_landmarks.colwise().minCoeff();
@@ -74,17 +72,28 @@ int main(int argc, char *argv[])
 	OVX.rowwise() += offset;
 #endif
 
-#if 0
-	target_landmarks *= inv_scale;
-	target_landmarks.rowwise() += offset;
+	igl::readDMAT("../data/male.dmat", target_landmarks);
+	Eigen::MatrixXd target_landmark_points;
+	target_landmark_points.resize(nojaw, 3);
+	for (int i = 0, c = nojaw; i < c; ++i) {
+		target_landmark_points.row(i) = OVX.row(target_landmarks.row(i )[0]);
+	}
 
+	igl::readDMAT("../data/head.dmat", template_landmarks);
+	Eigen::MatrixXd template_landmark_points;
+	template_landmark_points.resize(nojaw, 3);
+	for (int i = 0, c = nojaw; i < c; ++i) {
+		template_landmark_points.row(i) = VY.row(template_landmarks.row(i )[0]);
+	}
+
+#if 1
 	// align landmarks
 	Eigen::Matrix3d R;
 	Eigen::RowVector3d  t;
-	//for (int i = 0; i < 100; ++i) 
+	for (int i = 0; i < 8; ++i)
 	{
-		point_to_point_rigid_matching(target_landmarks, template_landmarks, R, t);
-		target_landmarks = ((target_landmarks*R).rowwise() + t).eval();
+		point_to_point_rigid_matching(target_landmark_points, template_landmark_points, R, t);
+		target_landmark_points = ((target_landmark_points*R).rowwise() + t).eval();
 		OVX = ((OVX*R).rowwise() + t).eval();
 	}
 #endif
@@ -112,6 +121,7 @@ int main(int argc, char *argv[])
   // predefined colors
   const Eigen::RowVector3d orange(1.0,0.7,0.2);
   const Eigen::RowVector3d blue(0.2,0.3,0.8);
+  const Eigen::RowVector3d red(1.0, 0.1, 0.1);
   const auto & set_meshes = [&](int mode = 0)
   {
 	  viewer.data.clear();
@@ -152,6 +162,7 @@ int main(int argc, char *argv[])
   };
   const auto & set_points = [&]()
   {
+#if 0
     Eigen::MatrixXd X,P;
     random_points_on_mesh(num_samples,VX,FX,X);
     Eigen::VectorXd D;
@@ -167,6 +178,13 @@ int main(int argc, char *argv[])
     E.col(0) = Eigen::VectorXi::LinSpaced(X.rows(),0,X.rows()-1);
     E.col(1) = Eigen::VectorXi::LinSpaced(X.rows(),X.rows(),2*X.rows()-1);
     viewer.data.set_edges(XP,E,Eigen::RowVector3d(0.3,0.3,0.3));
+#endif
+	Eigen::MatrixXd XP(target_landmark_points.rows() + template_landmark_points.rows(), 3);
+	XP << target_landmark_points, template_landmark_points;
+	Eigen::MatrixXd C(XP.rows(), 3);
+	C.array().topRows(target_landmark_points.rows()).rowwise() = (1. - (1. - blue.array())*.4);
+	C.array().bottomRows(template_landmark_points.rows()).rowwise() = (1. - (1. - orange.array())*.8); 
+	viewer.data.set_points(XP, C);
   };
   const auto & reset = [&]()
   {
@@ -251,6 +269,10 @@ int main(int argc, char *argv[])
 		  set_meshes(2);
 		  break;
 #if 1
+	  case 'u':
+		  deform_match(VY, FY, template_landmarks, VX, target_landmarks);
+		  break;
+
 	  case 'i':
 		  deform_init(VY, FY, VX, FX);
 		  break;

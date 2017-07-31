@@ -10,6 +10,27 @@ igl::ARAPData arap_data;
 Eigen::VectorXi S;
 Eigen::VectorXi b;
 
+void deform_match(
+	Eigen::MatrixXd & sourceVertices,
+	const Eigen::MatrixXi & sourceFaces,
+	const Eigen::MatrixXi & source_landmarks,
+	const Eigen::MatrixXd & targetVertices,
+	const Eigen::MatrixXi & target_landmarks)
+{
+	const int count = source_landmarks.rows();
+	Eigen::MatrixXd X;
+	X.resize(count, 3);
+	b.resize(count);
+	for (int i = 0; i < count; ++i) {
+		b[i] = source_landmarks(i, 0);
+		int idx = target_landmarks(i, 0);
+		X.row(i) = targetVertices.row(idx);
+	}
+	//arap_data.max_iter = 100;
+	igl::arap_precomputation(sourceVertices, sourceFaces, sourceVertices.cols(), b, arap_data);
+	igl::arap_solve(X, arap_data, sourceVertices);
+}
+
 #define kThreshold 0.01f
 #if 1
 void deform_init(
@@ -22,7 +43,7 @@ void deform_init(
 #if 0
 	const int num_sample = 100;
 #else
-	const int num_sample = targetVertices.rows();
+	const int num_sample = targetVertices.rows()/4;
 #endif
 	Eigen::MatrixXd B;
 	Eigen::VectorXi FI;
@@ -90,7 +111,7 @@ void deform_solve(Eigen::MatrixXd & output,
 	igl::point_mesh_squared_distance(
 		X, targetVertices, targetFaces,
 		D, I, C);
-#if 1
+#if 0
 	C = C * (1-stiffness) + X*stiffness;
 	//stiffness -= delta;
 	//if (stiffness < 0) stiffness = 0;
