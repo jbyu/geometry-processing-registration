@@ -5,6 +5,8 @@
 #include <igl/colon.h>
 #include <algorithm>
 
+#include <unsupported/Eigen/KroneckerProduct>
+
 //igl::ARAPData *arap_data = nullptr;
 igl::ARAPData arap_data;
 Eigen::VectorXi S;
@@ -29,6 +31,31 @@ void deform_match(
 	//arap_data.max_iter = 100;
 	igl::arap_precomputation(sourceVertices, sourceFaces, sourceVertices.cols(), b, arap_data);
 	igl::arap_solve(X, arap_data, sourceVertices);
+
+#if 0
+	//Kronecker product
+	Eigen::SparseMatrix<float> G;
+	Eigen::Vector4d D(1, 1, 1, 0.5);
+	igl::diag(D, G);
+
+	Eigen::SparseMatrix<float> M(2,2);
+	M.insert(0, 0) = 1;
+	//M.insert(0, 1) = 2;
+	M.insert(1, 0) = -1;
+	//M.insert(1, 1) = 4;
+	std::cout << M << std::endl << std::endl << G << std::endl << std::endl;
+
+	Eigen::SparseMatrix<float> kron_M_G(M.rows()*G.rows(), M.cols()*G.cols());
+	kron_M_G = kroneckerProduct(M, G);
+
+	std::cout << kron_M_G << std::endl;
+
+	Eigen::MatrixXd I = Eigen::MatrixXd::Zero(4, 3);
+	I.block(0, 0, 3, 3).setIdentity();
+	Eigen::MatrixXd X2 = I.replicate(4, 1);
+
+	std::cout << X2 << std::endl;
+#endif
 }
 
 #define kThreshold 0.01f
