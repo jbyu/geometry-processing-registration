@@ -5,7 +5,9 @@
 #include <igl/colon.h>
 #include <algorithm>
 
-#include <unsupported/Eigen/KroneckerProduct>
+#include <igl/boundary_loop.h>
+#include <igl/ray_mesh_intersect.h>
+#include <igl/per_vertex_normals.h>
 
 //igl::ARAPData *arap_data = nullptr;
 igl::ARAPData arap_data;
@@ -17,8 +19,10 @@ void deform_match(
 	const Eigen::MatrixXi & sourceFaces,
 	const Eigen::MatrixXi & source_landmarks,
 	const Eigen::MatrixXd & targetVertices,
+	const Eigen::MatrixXi & targetFaces,
 	const Eigen::MatrixXi & target_landmarks)
 {
+#if 0
 	const int count = source_landmarks.rows();
 	Eigen::MatrixXd X;
 	X.resize(count, 3);
@@ -28,6 +32,93 @@ void deform_match(
 		int idx = target_landmarks(i, 0);
 		X.row(i) = targetVertices.row(idx);
 	}
+#else
+	Eigen::VectorXi boundary;
+	igl::boundary_loop(targetFaces, boundary);
+
+	Eigen::MatrixXd sourceNormals;
+	igl::per_vertex_normals(sourceVertices, sourceFaces, sourceNormals);
+
+	Eigen::VectorXd sqrD;
+	Eigen::VectorXi I;
+	Eigen::MatrixXd U;
+	igl::point_mesh_squared_distance(sourceVertices, targetVertices, targetFaces, sqrD, I, U);
+
+	int numVertices = sourceVertices.rows();
+	Eigen::VectorXi w = Eigen::VectorXi::Ones(numVertices);
+
+	for (int i = 0; i < numVertices; ++i) {
+		bool prune = false;
+#if 1
+		// avoid boundary sampling
+		auto& face = targetFaces.row(I[i]);
+		for (int j = 0, c = boundary.size(); j < c; ++j) {
+			if (boundary[j] == face[0] ||
+				boundary[j] == face[1] ||
+				boundary[j] == face[2])
+			{
+				prune = true;
+				w[i] = 0;
+				break;
+			}
+		}
+		if (prune)
+			continue;
+#endif
+		auto &source = sourceVertices.row(i);
+		Eigen::RowVector3d dir = (U.row(i) - source);
+		double distance = dir.norm();
+		dir /= distance;
+
+		// avoid different direction
+		auto &normal = sourceNormals.row(i);
+		if (abs(normal.dot(dir)) < 0.866) {
+			w[i] = 0;
+			continue;
+		}
+
+		// avoid self intersection
+		auto & V = sourceVertices;
+		auto & F = sourceFaces;
+		for (int f = 0; f < F.rows(); ++f)
+		{
+			int i0 = F(f, 0);
+			int i1 = F(f, 1);
+			int i2 = F(f, 2);
+			if (i0 == i ||
+				i1 == i ||
+				i2 == i) {
+				continue;
+			}
+			// Should be but can't be const 
+			Eigen::RowVector3d v0 = V.row(i0).template cast<double>();
+			Eigen::RowVector3d v1 = V.row(i1).template cast<double>();
+			Eigen::RowVector3d v2 = V.row(i2).template cast<double>();
+			// shoot ray, record hit
+			double t, u, v;
+			if (intersect_triangle1(source.data(), dir.data(), v0.data(), v1.data(), v2.data(),
+				&t, &u, &v) && t > 0 && t < distance)
+			{
+				prune = true;
+				w[i] = 0;
+				//std::cout << "!";
+				break;
+			}
+		}
+	}
+
+	igl::colon<int>(0, numVertices - 1, b);
+	b.conservativeResize(std::stable_partition(b.data(), b.data() + b.size(),
+		[&](int i)->bool {return w(i) > 0; }) - b.data());
+
+	Eigen::MatrixXd X;
+	X.resize(b.size(), 3);
+	float alpha = 1.0f;
+	for (int i = 0; i < b.size(); ++i) {
+		int idx = b[i];
+		X.row(i) = U.row(idx)*alpha + sourceVertices.row(idx)*(1.f-alpha);
+	}
+#endif
 	//arap_data.max_iter = 100;
 	igl::arap_precomputation(sourceVertices, sourceFaces, sourceVertices.cols(), b, arap_data);
 	igl::arap_solve(X, arap_data, sourceVertices);

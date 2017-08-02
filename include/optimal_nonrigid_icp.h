@@ -1,13 +1,9 @@
 #ifndef OPTIMAL_NONRIGID_ICP_H
 #define OPTIMAL_NONRIGID_ICP_H
 
-#include <vector>
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
-#include <Eigen/IterativeLinearSolvers>
-#include <unsupported/Eigen/KroneckerProduct>
 #include <igl/AABB.h>
-#include <igl/diag.h>
 
 class OptimalNonrigidICP
 {
@@ -16,9 +12,7 @@ class OptimalNonrigidICP
 protected:
 	Eigen::MatrixXd vTarget, vTemplate;
 	Eigen::MatrixXi fTarget, fTemplate;
-
-	std::vector<Edge> _edges;
-	std::vector<float> _weights;
+	Eigen::VectorXi boundary;
 
 	igl::AABB<Eigen::MatrixXd, 3> _tree;
 
@@ -27,129 +21,20 @@ protected:
 	Eigen::MatrixXd X;
 	Eigen::SparseMatrix<double> D;
 	Eigen::VectorXd wVec;
+
+	Eigen::SparseMatrix<double> kron_M_G;
+
 	int _numVertices;
+	int _numEdges;
 
 public:
 	OptimalNonrigidICP(){}
 	~OptimalNonrigidICP(){}
 
-	void init()
-	{
-		edgesInit();
-		verticesInit();
-		nearestSearchInit();
-	}
+	void init(const Eigen::MatrixXd& vt, const Eigen::MatrixXi& ft,
+		const Eigen::MatrixXd& vs, const Eigen::MatrixXi& fs);
 
-	void initCompute()
-	{
-		correspondencesInit();
-		weightsInit();
-	}
-
-	void edgesInit()
-	{
-		_edges.clear();
-		for (int i = 0, count = fTemplate.rows(); i < count; ++i)
-		{
-			auto face = fTemplate.row(i);
-			int a = face[0];
-			int b = face[1];
-			int c = face[2];
-			_edges.push_back(Edge(a,b));
-			_edges.push_back(Edge(b,c));
-			_edges.push_back(Edge(c,a));
-		}
-	}
-
-	void nearestSearchInit()
-	{
-		_tree.init(vTarget, fTarget);
-	}
-
-	void verticesInit()
-	{
-		_vertices = vTemplate;
-		_correspondences.resize(vTemplate.rows(), 3);
-
-		// Set matrix G (equation (3) in Amberg et al.) 
-		float gamma = 1;
-		Eigen::SparseMatrix<double> G;
-		Eigen::Vector4d g(1, 1, 1, gamma);
-		igl::diag(g, G);
-
-		_numVertices = vTemplate.rows();
-		int m = _edges.size();
-		Eigen::SparseMatrix<double> M(m, _numVertices);
-		for (int r = 0; r < m; ++r) {
-			const Edge& edge = _edges[r];
-			M.insert(r, edge.first) = -1;
-			M.insert(r, edge.second) = 1;
-		}
-
-		// Precompute kronecker product of M and G
-		Eigen::SparseMatrix<double> kron_M_G(M.rows()*G.rows(), M.cols()*G.cols());
-		kron_M_G = kroneckerProduct(M, G);
-
-		// Set matrix D (equation (8) in Amberg et al.)
-		D = Eigen::SparseMatrix<double>(_numVertices, _numVertices * 4);
-		for (int i = 0; i < _numVertices; ++i) {
-			auto vtx = vTemplate.row(i);
-			D.insert(i, 4 * i) = vtx[0];
-			D.insert(i, 4 * i+1) = vtx[1];
-			D.insert(i, 4 * i+2) = vtx[2];
-			D.insert(i, 4 * i+3) = 1;
-		}
-
-		// Set weights vector
-		wVec = Eigen::VectorXd::Ones(_numVertices);
-
-		// initialize transformation matrix X with identity matrices
-		Eigen::MatrixXd I(4, 3);
-		I.block(0, 0, 3, 3).setIdentity();
-		X = I.replicate(_numVertices, 1);
-	}
-
-	void correspondencesInit()
-	{	
-		int index;
-		Eigen::RowVector3d closest;
-		for (int i = 0, c= _vertices.rows(); i < c; i++)
-		{
-			_tree.squared_distance(vTarget, fTarget, _vertices.row(i), index, closest);
-			_correspondences.row(i) = closest;
-		}
-	}
-
-	void weightsInit()
-	{
-		const int size = vTemplate.rows();
-		_weights.resize( size );
-		for (int i = 0; i < size; ++i) {
-			_weights[i] = 1.0f;
-		}
-	}
-
-	int compute(float alpha) {
-		// Transform source points by current transformation matrix X
-		_vertices = D*X;
-
-		// Determine closest points on target U to transformed source points.
-		Eigen::VectorXd sqrD;
-		Eigen::VectorXi I;
-		Eigen::MatrixXd U;
-		_tree.squared_distance(vTarget, fTarget, _vertices, sqrD, I, U);
-
-		// Update weight matrix
-		Eigen::SparseMatrix<double> W(_numVertices, _numVertices);
-		igl::diag(wVec, W);
-
-		// Specify A and B (See equation (12) from paper)
-
-
-
-		return 0;
-	}
-
+	int compute(float alpha, float epsilon, Eigen::MatrixXd& deformed);
 
 #if 0
 	int compute(float alpha, float beta, float gamma)

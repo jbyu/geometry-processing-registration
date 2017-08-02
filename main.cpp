@@ -13,12 +13,15 @@
 #include <iostream>
 
 #include "mesh_deformation.h"
+#include "optimal_nonrigid_icp.h"
 
 Eigen::MatrixXd NFY;
 Eigen::MatrixXd NVY;
 Eigen::MatrixXi target_landmarks;
 Eigen::MatrixXi template_landmarks;
 const int nojaw = 66;
+
+OptimalNonrigidICP nricp;
 
 int main(int argc, char *argv[])
 {
@@ -52,7 +55,7 @@ int main(int argc, char *argv[])
   m = OVX.colwise().minCoeff();
   M = OVX.colwise().maxCoeff();
   float inv_scale = scale / (M[0] - m[0]);
-  Eigen::RowVector3d offset(c[0], c[1], c[2] + 2);
+  Eigen::RowVector3d offset(c[0], c[1], c[2] + 1);
   OVX *= inv_scale;
   OVX.rowwise() += offset;
 #elif 1
@@ -90,7 +93,7 @@ int main(int argc, char *argv[])
 	// align landmarks
 	Eigen::Matrix3d R;
 	Eigen::RowVector3d  t;
-	for (int i = 0; i < 8; ++i)
+	for (int i = 0; i < 3; ++i)
 	{
 		point_to_point_rigid_matching(target_landmark_points, template_landmark_points, R, t);
 		target_landmark_points = ((target_landmark_points*R).rowwise() + t).eval();
@@ -162,7 +165,7 @@ int main(int argc, char *argv[])
   };
   const auto & set_points = [&]()
   {
-#if 0
+#if 1
     Eigen::MatrixXd X,P;
     random_points_on_mesh(num_samples,VX,FX,X);
     Eigen::VectorXd D;
@@ -178,13 +181,14 @@ int main(int argc, char *argv[])
     E.col(0) = Eigen::VectorXi::LinSpaced(X.rows(),0,X.rows()-1);
     E.col(1) = Eigen::VectorXi::LinSpaced(X.rows(),X.rows(),2*X.rows()-1);
     viewer.data.set_edges(XP,E,Eigen::RowVector3d(0.3,0.3,0.3));
-#endif
+#else
 	Eigen::MatrixXd XP(target_landmark_points.rows() + template_landmark_points.rows(), 3);
 	XP << target_landmark_points, template_landmark_points;
 	Eigen::MatrixXd C(XP.rows(), 3);
 	C.array().topRows(target_landmark_points.rows()).rowwise() = (1. - (1. - blue.array())*.4);
 	C.array().bottomRows(template_landmark_points.rows()).rowwise() = (1. - (1. - orange.array())*.8); 
 	viewer.data.set_points(XP, C);
+#endif
   };
   const auto & reset = [&]()
   {
@@ -268,11 +272,23 @@ int main(int argc, char *argv[])
 	  case '2':
 		  set_meshes(2);
 		  break;
+
+	  case 'q':
+		  nricp.init(VX, FX, VY, FY);
+		  break;
+	  case 'w':
+	  {
+		  Eigen::MatrixXd OY;
+		  nricp.compute(10, 1, OY);
+		  VY = OY;
+		  set_meshes(2);
+	  }
+		  break;
 #if 1
 	  case 'u':
-		  deform_match(VY, FY, template_landmarks, VX, target_landmarks);
+		  deform_match(VY, FY, template_landmarks, VX, FX, target_landmarks);
+		  set_meshes(2);
 		  break;
-
 	  case 'i':
 		  deform_init(VY, FY, VX, FX);
 		  break;

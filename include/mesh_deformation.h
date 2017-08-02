@@ -7,6 +7,7 @@ void deform_match(
 	const Eigen::MatrixXi & sourceFaces,
 	const Eigen::MatrixXi & source_landmarks,
 	const Eigen::MatrixXd & targetVertices,
+	const Eigen::MatrixXi & targetFaces,
 	const Eigen::MatrixXi & target_landmarks);
 
 void deform_init(
