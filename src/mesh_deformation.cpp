@@ -39,6 +39,9 @@ void deform_match(
 	Eigen::MatrixXd sourceNormals;
 	igl::per_vertex_normals(sourceVertices, sourceFaces, sourceNormals);
 
+	Eigen::MatrixXd targetNormals;
+	igl::per_vertex_normals(targetVertices, targetFaces, targetNormals);
+
 	Eigen::VectorXd sqrD;
 	Eigen::VectorXi I;
 	Eigen::MatrixXd U;
@@ -70,9 +73,21 @@ void deform_match(
 		double distance = dir.norm();
 		dir /= distance;
 
-		// avoid different direction
+		// avoid weird direction
 		auto &normal = sourceNormals.row(i);
-		if (abs(normal.dot(dir)) < 0.866) {
+		if (abs(normal.dot(dir)) < 0.707) {
+			w[i] = 0;
+			continue;
+		}
+		if (0 > normal.dot(targetNormals.row(face[0]))) {
+			w[i] = 0;
+			continue;
+		}
+		if (0 > normal.dot(targetNormals.row(face[1]))) {
+			w[i] = 0;
+			continue;
+		}
+		if (0 > normal.dot(targetNormals.row(face[2]))) {
 			w[i] = 0;
 			continue;
 		}
@@ -101,7 +116,6 @@ void deform_match(
 			{
 				prune = true;
 				w[i] = 0;
-				//std::cout << "!";
 				break;
 			}
 		}
@@ -113,7 +127,7 @@ void deform_match(
 
 	Eigen::MatrixXd X;
 	X.resize(b.size(), 3);
-	float alpha = 1.0f;
+	double alpha = 0.5;
 	for (int i = 0; i < b.size(); ++i) {
 		int idx = b[i];
 		X.row(i) = U.row(idx)*alpha + sourceVertices.row(idx)*(1.f-alpha);

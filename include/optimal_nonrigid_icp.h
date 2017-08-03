@@ -12,13 +12,15 @@ class OptimalNonrigidICP
 protected:
 	Eigen::MatrixXd vTarget, vTemplate;
 	Eigen::MatrixXi fTarget, fTemplate;
+
+	Eigen::MatrixXd targetNormals;
 	Eigen::VectorXi boundary;
 
 	igl::AABB<Eigen::MatrixXd, 3> _tree;
 
-	Eigen::MatrixXd _vertices, _correspondences;
+	//Eigen::MatrixXd _vertices, _correspondences;
 
-	Eigen::MatrixXd X;
+	Eigen::MatrixXd X, oldX;
 	Eigen::SparseMatrix<double> D;
 	Eigen::VectorXd wVec;
 

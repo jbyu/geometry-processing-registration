@@ -9,6 +9,9 @@
 #include <igl/ismember.h>
 #include <igl/boundary_loop.h>
 #include <igl/ray_mesh_intersect.h>
+#include <igl/per_vertex_normals.h>
+#include <igl/adjacency_matrix.h>
+#include <igl/point_mesh_squared_distance.h>
 
 void OptimalNonrigidICP::init(const Eigen::MatrixXd& vt, const Eigen::MatrixXi& ft,
 	const Eigen::MatrixXd& vs, const Eigen::MatrixXi& fs)
@@ -22,9 +25,14 @@ void OptimalNonrigidICP::init(const Eigen::MatrixXd& vt, const Eigen::MatrixXi& 
 	// setup bounding box tree
 	_tree.init(vTarget, fTarget);
 
+	igl::per_vertex_normals(vt, ft, targetNormals);
+
 	std::cout << "gather boundary." << std::endl;
 	//Detect of the boundary vertices
 	igl::boundary_loop(fTarget, boundary);
+
+	//Eigen::SparseMatrix<int> A;
+	//igl::adjacency_matrix(fTarget, A);
 
 	// setup edge info.
 	std::vector<Edge> edges;
@@ -38,16 +46,18 @@ void OptimalNonrigidICP::init(const Eigen::MatrixXd& vt, const Eigen::MatrixXi& 
 		edges.push_back(Edge(b, c));
 		edges.push_back(Edge(c, a));
 	}
+	_numVertices = vTemplate.rows();
+	_numEdges = edges.size();
 
+#if 0
 	std::cout << "prepare G." << std::endl;
 	// Set matrix G (equation (3) in Amberg et al.) 
 	double gamma = 1;
 	Eigen::SparseMatrix<double> G;
 	Eigen::Vector4d g(1, 1, 1, gamma);
 	igl::diag(g, G);
+	std::cout << G << std::endl;
 
-	_numVertices = vTemplate.rows();
-	_numEdges = edges.size();
 	Eigen::SparseMatrix<double> M(_numEdges, _numVertices);
 	for (int r = 0; r < _numEdges; ++r) {
 		const Edge& edge = edges[r];
@@ -59,6 +69,23 @@ void OptimalNonrigidICP::init(const Eigen::MatrixXd& vt, const Eigen::MatrixXi& 
 	// Precompute kronecker product of M and G
 	//Eigen::SparseMatrix<double> kron_M_G(M.rows()*G.rows(), M.cols()*G.cols());
 	kron_M_G = kroneckerProduct(M, G);
+#else
+	kron_M_G = Eigen::SparseMatrix<double>(4 * _numEdges, 4 * _numVertices);
+	std::vector< Eigen::Triplet<double> > M_G;
+	for (int i = 0; i < _numEdges; ++i)
+	{
+		Edge edge = edges[i];
+		int a = edge.first;
+		int b = edge.second;
+
+		for (int j = 0; j < 4; j++)
+			M_G.push_back(Eigen::Triplet<double>(i * 4 + j, a * 4 + j, -1));
+
+		for (int j = 0; j < 4; j++)
+			M_G.push_back(Eigen::Triplet<double>(i * 4 + j, b * 4 + j, 1));
+	}
+	kron_M_G.setFromTriplets(M_G.begin(), M_G.end());
+#endif
 
 	std::cout << "prepare D." << std::endl;
 	// Set matrix D (equation (8) in Amberg et al.)
@@ -71,129 +98,189 @@ void OptimalNonrigidICP::init(const Eigen::MatrixXd& vt, const Eigen::MatrixXi& 
 		D.insert(i, 4 * i + 3) = 1;
 	}
 
-	std::cout << "prepare weights." << std::endl;
 	// Set weights vector
 	wVec = Eigen::VectorXd::Ones(_numVertices);
 
 	std::cout << "prepare X." << std::endl;
 	// initialize transformation matrix X with identity matrices
-	Eigen::MatrixXd I(4, 3);
+	Eigen::MatrixXd I = Eigen::MatrixXd::Zero(4, 3);
 	I.block(0, 0, 3, 3).setIdentity();
+	//std::cout << I << std::endl;
 	X = I.replicate(_numVertices, 1);
 
+	oldX = 10*X;
 	std::cout << "initial completed." << std::endl;
 }
 
+inline void TransfromVertices(Eigen::MatrixXd & out, const Eigen::MatrixXd& in, const Eigen::MatrixXd& X)
+{
+	const int count = in.rows();
+	out(count, 3);
+	for (int i = 0; i < count; ++i) {
+		out.row(i) = in.row(i) * X.block(4 * i, 0, 3, 3) + X.row(4 * i + 3);
+	}
+}
+
 int OptimalNonrigidICP::compute(float alpha, float epsilon, Eigen::MatrixXd& deformed) {
-	// set oldX to be very different to X so that norm(X - oldX) is large on first iteration
-	Eigen::MatrixXd oldX = 2 * X;
 	int iteration = 0;
-	float error = 1;
-	alpha = 10;
-	epsilon = 10000;
-	do {
-		std::cout << ++iteration << "th iteration:" << std::endl;
-		// Transform source points by current transformation matrix X
-		_vertices = D*X;
-
-		std::cout << "find closest points." << std::endl;
-		// Determine closest points on target U to transformed source points.
-		Eigen::VectorXd sqrD;
-		Eigen::VectorXi I;
-		Eigen::MatrixXd U;
-		_tree.squared_distance(vTarget, fTarget, _vertices, sqrD, I, U);
-
-		std::cout << "pruning... ";
-		int prune = 0;
-		// avoid boundary sampling
-		for (int i = 0; i < _numVertices; ++i) {
-			auto & face = fTarget.row(I[i]);
-			wVec[i] = 1;
-			for (int j = 0, c = boundary.size(); j < c; ++j) {
-				if (boundary[j] == face[0] ||
-					boundary[j] == face[1] ||
-					boundary[j] == face[2])
-				{
-					wVec[i] = 0;
-					++prune;
-					break;
-				}
+	float error = 0;
+	alpha = 50;
+	epsilon = 1.25;
+	while (alpha > 10) {
+		do {
+			std::cout << "================= " << ++iteration << "th iteration" << " =================" << std::endl;
+			std::cout << "alpha: " << alpha << std::endl;
+			// Transform source points by current transformation matrix X
+			Eigen::MatrixXd transformed(_numVertices, 3);
+			for (int i = 0; i < _numVertices; ++i) {
+				transformed.row(i) = vTemplate.row(i) * X.block(4 * i, 0, 3, 3) + X.row(4 * i + 3);
 			}
-			if (0 == wVec[i])
-				continue;
 
-			auto &source = _vertices.row(i);
-			Eigen::RowVector3d dir = (U.row(i) - source);
-			double distance = dir.norm();
-			dir /= distance;
-			// loop over all triangles
-			auto & V = _vertices;
-			auto & F = fTemplate;
-			for (int f = 0; f < F.rows(); ++f)
-			{
-				int i0 = F(f, 0);
-				int i1 = F(f, 1);
-				int i2 = F(f, 2);
-				if (i0 == i ||
-					i1 == i ||
-					i2 == i) {
+			std::cout << "find closest points." << std::endl;
+			// Determine closest points on target U to transformed source points.
+			Eigen::VectorXd sqrD;
+			Eigen::VectorXi I;
+			Eigen::MatrixXd U;
+			//_tree.squared_distance(vTarget, fTarget, _vertices, sqrD, I, U);
+			igl::point_mesh_squared_distance(transformed, vTarget, fTarget, sqrD, I, U);
+#if 1
+			Eigen::MatrixXd sourceNormals;
+			igl::per_vertex_normals(transformed, vTemplate, sourceNormals);
+
+			std::cout << "pruning... ";
+			int count = 0;
+			const float kMissing = 0;
+			for (int i = 0; i < _numVertices; ++i) {
+				bool prune = false;
+				// avoid boundary sampling
+				auto & face = fTarget.row(I[i]);
+				wVec[i] = 1;
+				for (int j = 0, c = boundary.size(); j < c; ++j) {
+					if (boundary[j] == face[0] ||
+						boundary[j] == face[1] ||
+						boundary[j] == face[2])
+					{
+						wVec[i] = kMissing;
+						U.row(i) = vTemplate.row(i);
+						++count;
+						prune = true;
+						break;
+					}
+				}
+				if (prune)
+					continue;
+
+				auto &source = transformed.row(i);
+				Eigen::RowVector3d dir = (U.row(i) - source);
+				double distance = dir.norm();
+				dir /= distance;
+
+				// avoid weird direction
+				auto &normal = sourceNormals.row(i);
+				if (abs(normal.dot(dir)) < 0.707) {
+					wVec[i] = kMissing;
+					U.row(i) = vTemplate.row(i);
+					++count;
 					continue;
 				}
-				// Should be but can't be const 
-				Eigen::RowVector3d v0 = V.row(i0).template cast<double>();
-				Eigen::RowVector3d v1 = V.row(i1).template cast<double>();
-				Eigen::RowVector3d v2 = V.row(i2).template cast<double>();
-				// shoot ray, record hit
-				double t, u, v;
-				if (intersect_triangle1(source.data(), dir.data(), v0.data(), v1.data(), v2.data(),
-					&t, &u, &v) && t > 0 && t < distance)
+				if (0 > normal.dot(targetNormals.row(face[0]))) {
+					wVec[i] = kMissing;
+					U.row(i) = vTemplate.row(i);
+					++count;
+					continue;
+				}
+				if (0 > normal.dot(targetNormals.row(face[1]))) {
+					wVec[i] = kMissing;
+					U.row(i) = vTemplate.row(i);
+					++count;
+					continue;
+				}
+				if (0 > normal.dot(targetNormals.row(face[2]))) {
+					wVec[i] = kMissing;
+					U.row(i) = vTemplate.row(i);
+					++count;
+					continue;
+				}
+
+				// loop over all triangles
+				auto & V = transformed;
+				auto & F = fTemplate;
+				for (int f = 0; f < F.rows(); ++f)
 				{
-					wVec[i] = 0;
-					++prune;
-					break;
+					int i0 = F(f, 0);
+					int i1 = F(f, 1);
+					int i2 = F(f, 2);
+					if (i0 == i ||
+						i1 == i ||
+						i2 == i) {
+						continue;
+					}
+					// Should be but can't be const 
+					Eigen::RowVector3d v0 = V.row(i0).template cast<double>();
+					Eigen::RowVector3d v1 = V.row(i1).template cast<double>();
+					Eigen::RowVector3d v2 = V.row(i2).template cast<double>();
+					// shoot ray, record hit
+					double t, u, v;
+					if (intersect_triangle1(source.data(), dir.data(), v0.data(), v1.data(), v2.data(),
+						&t, &u, &v) && t > 0 && t < distance)
+					{
+						wVec[i] = kMissing;
+						U.row(i) = vTemplate.row(i);
+						++prune;
+						break;
+					}
 				}
 			}
-		}
-		std::cout << prune<< " points" << std::endl;
+			std::cout << count << " points" << std::endl;
+#endif
+			std::cout << "update weights." << std::endl;
+			// Update weight matrix
+			Eigen::SparseMatrix<double> W;
+			igl::diag(wVec, W);
+#if 1
+			std::cout << "compute A." << std::endl;
+			// Specify A and B (See equation (12) from paper)
+			Eigen::SparseMatrix<double> A;
+			Eigen::SparseMatrix<double> stiffness = alpha*kron_M_G;
+			Eigen::SparseMatrix<double> distance = W*D;
+			igl::cat(1, stiffness, distance, A);
 
-		std::cout << "update weights." << std::endl;
-		// Update weight matrix
-		Eigen::SparseMatrix<double> W(_numVertices, _numVertices);
-		igl::diag(wVec, W);
+			std::cout << "compute B." << std::endl;
+			Eigen::MatrixXd B = Eigen::MatrixXd::Zero(4 * _numEdges + _numVertices, 3);
+			for (int i = 0; i < _numVertices; ++i) {
+				B.row(4 * _numEdges + i) = U.row(i) * wVec(i);
+			}
+#else
+			Eigen::SparseMatrix<double> A = W*D;
+			Eigen::MatrixXd B = Eigen::MatrixXd::Zero(_numVertices, 3);
+			for (int i = 0; i < _numVertices; ++i) {
+				B.row(i) = U.row(i) * wVec(i);
+			}
+#endif
+			Eigen::SparseMatrix<double> At(A.transpose());
+			Eigen::SparseMatrix<double> ATA = At * A;
+			Eigen::MatrixXd ATB = At * B;
 
-		std::cout << "compute A." << std::endl;
-		// Specify A and B (See equation (12) from paper)
-		Eigen::SparseMatrix<double> A;
-		Eigen::SparseMatrix<double> stiffness = kron_M_G*alpha;
-		Eigen::SparseMatrix<double> distance = W*D;
-		igl::cat(1, stiffness, distance, A);
+			Eigen::ConjugateGradient< Eigen::SparseMatrix<double> > solver;
+			solver.compute(ATA);
+			std::cout << "solver computed ATA." << std::endl;
+			if (solver.info() != Eigen::Success)
+			{
+				std::cerr << "Decomposition failed" << std::endl;
+				return 1;
+			}
+			oldX = X;
+			X = solver.solve(ATB);
+			std::cout << "X calculated." << std::endl;
+			error = (X - oldX).norm();
+			std::cout << "Error: " << error << std::endl;
+		} while (error >= epsilon);
+		alpha -= 10;
+	}
 
-		std::cout << "compute B." << std::endl;
-		Eigen::MatrixXd B(4 * _numEdges + _numVertices, 3);
-		for (int i = 0; i < _numVertices; ++i) {
-			B.row(4 * _numEdges + i) = U.row(i) * wVec(i);
-		}
-
-		Eigen::SparseMatrix<double> At(A.transpose());
-		Eigen::SparseMatrix<double> ATA = At * A;
-		std::cout << "ATA calculated." << std::endl;
-		Eigen::MatrixXd ATB = At * B;
-		std::cout << "ATB calculated." << std::endl;
-
-		Eigen::ConjugateGradient< Eigen::SparseMatrix<double> > solver;
-		solver.compute(ATA);
-		std::cout << "solver computed ATA." << std::endl;
-		if (solver.info() != Eigen::Success)
-		{
-			std::cerr << "Decomposition failed" << std::endl;
-			return 1;
-		}
-		X = solver.solve(ATB);
-		std::cout << "X calculated." << std::endl;
-		error = (X - oldX).norm();
-		std::cout << "Error: " << error << std::endl;
-	} while (error >= epsilon);
-
-	deformed = D*X;
+	deformed.resize(_numVertices, 3);
+	for (int i = 0; i < _numVertices; ++i) {
+		deformed.row(i) = vTemplate.row(i) * X.block(4 * i, 0, 3, 3) + X.row(4 * i + 3);
+	}
 	return 0;
 }
