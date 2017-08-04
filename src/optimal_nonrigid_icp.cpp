@@ -122,16 +122,23 @@ inline void TransfromVertices(Eigen::MatrixXd & out, const Eigen::MatrixXd& in, 
 }
 
 int OptimalNonrigidICP::compute(float alpha, float epsilon, Eigen::MatrixXd& deformed) {
+	const int kMaxIteration = 10;
 	int iteration = 0;
 	float error = 0;
-	alpha = 50;
-	epsilon = 1.25;
-	while (alpha > 10) {
+	alpha = 10;
+	epsilon = 1;
+
+	Eigen::Vector3d m = vTemplate.colwise().minCoeff();
+	Eigen::Vector3d M = vTemplate.colwise().maxCoeff();
+	double threshold = (M - m).squaredNorm() * 0.0625;
+
+	Eigen::MatrixXd transformed(_numVertices, 3);
+
+	while (alpha >= 1) {
 		do {
 			std::cout << "================= " << ++iteration << "th iteration" << " =================" << std::endl;
 			std::cout << "alpha: " << alpha << std::endl;
 			// Transform source points by current transformation matrix X
-			Eigen::MatrixXd transformed(_numVertices, 3);
 			for (int i = 0; i < _numVertices; ++i) {
 				transformed.row(i) = vTemplate.row(i) * X.block(4 * i, 0, 3, 3) + X.row(4 * i + 3);
 			}
@@ -141,17 +148,25 @@ int OptimalNonrigidICP::compute(float alpha, float epsilon, Eigen::MatrixXd& def
 			Eigen::VectorXd sqrD;
 			Eigen::VectorXi I;
 			Eigen::MatrixXd U;
-			//_tree.squared_distance(vTarget, fTarget, _vertices, sqrD, I, U);
-			igl::point_mesh_squared_distance(transformed, vTarget, fTarget, sqrD, I, U);
+			_tree.squared_distance(vTarget, fTarget, transformed, sqrD, I, U);
+			//igl::point_mesh_squared_distance(transformed, vTarget, fTarget, sqrD, I, U);
 #if 1
 			Eigen::MatrixXd sourceNormals;
-			igl::per_vertex_normals(transformed, vTemplate, sourceNormals);
+			igl::per_vertex_normals(transformed, fTemplate, sourceNormals);
 
 			std::cout << "pruning... ";
 			int count = 0;
 			const float kMissing = 0;
 			for (int i = 0; i < _numVertices; ++i) {
 				bool prune = false;
+
+				// avoid far away point
+				if (sqrD[i] > threshold) {
+					prune = true;
+					wVec[i] = 0;
+					continue;
+				}
+
 				// avoid boundary sampling
 				auto & face = fTarget.row(I[i]);
 				wVec[i] = 1;
@@ -161,7 +176,6 @@ int OptimalNonrigidICP::compute(float alpha, float epsilon, Eigen::MatrixXd& def
 						boundary[j] == face[2])
 					{
 						wVec[i] = kMissing;
-						U.row(i) = vTemplate.row(i);
 						++count;
 						prune = true;
 						break;
@@ -179,30 +193,26 @@ int OptimalNonrigidICP::compute(float alpha, float epsilon, Eigen::MatrixXd& def
 				auto &normal = sourceNormals.row(i);
 				if (abs(normal.dot(dir)) < 0.707) {
 					wVec[i] = kMissing;
-					U.row(i) = vTemplate.row(i);
 					++count;
 					continue;
 				}
 				if (0 > normal.dot(targetNormals.row(face[0]))) {
 					wVec[i] = kMissing;
-					U.row(i) = vTemplate.row(i);
 					++count;
 					continue;
 				}
 				if (0 > normal.dot(targetNormals.row(face[1]))) {
 					wVec[i] = kMissing;
-					U.row(i) = vTemplate.row(i);
 					++count;
 					continue;
 				}
 				if (0 > normal.dot(targetNormals.row(face[2]))) {
 					wVec[i] = kMissing;
-					U.row(i) = vTemplate.row(i);
 					++count;
 					continue;
 				}
 
-				// loop over all triangles
+				// avoid self intersection
 				auto & V = transformed;
 				auto & F = fTemplate;
 				for (int f = 0; f < F.rows(); ++f)
@@ -216,16 +226,15 @@ int OptimalNonrigidICP::compute(float alpha, float epsilon, Eigen::MatrixXd& def
 						continue;
 					}
 					// Should be but can't be const 
-					Eigen::RowVector3d v0 = V.row(i0).template cast<double>();
-					Eigen::RowVector3d v1 = V.row(i1).template cast<double>();
-					Eigen::RowVector3d v2 = V.row(i2).template cast<double>();
+					Eigen::RowVector3d v0 = V.row(i0);
+					Eigen::RowVector3d v1 = V.row(i1);
+					Eigen::RowVector3d v2 = V.row(i2);
 					// shoot ray, record hit
 					double t, u, v;
 					if (intersect_triangle1(source.data(), dir.data(), v0.data(), v1.data(), v2.data(),
 						&t, &u, &v) && t > 0 && t < distance)
 					{
 						wVec[i] = kMissing;
-						U.row(i) = vTemplate.row(i);
 						++prune;
 						break;
 					}
@@ -274,13 +283,15 @@ int OptimalNonrigidICP::compute(float alpha, float epsilon, Eigen::MatrixXd& def
 			std::cout << "X calculated." << std::endl;
 			error = (X - oldX).norm();
 			std::cout << "Error: " << error << std::endl;
-		} while (error >= epsilon);
-		alpha -= 10;
+		} while (error >= epsilon  && iteration < kMaxIteration);
+		alpha -= 1;
+		iteration = 0;
 	}
 
 	deformed.resize(_numVertices, 3);
 	for (int i = 0; i < _numVertices; ++i) {
 		deformed.row(i) = vTemplate.row(i) * X.block(4 * i, 0, 3, 3) + X.row(4 * i + 3);
 	}
+
 	return 0;
 }
