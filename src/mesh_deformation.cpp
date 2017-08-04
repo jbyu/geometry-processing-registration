@@ -47,11 +47,21 @@ void deform_match(
 	Eigen::MatrixXd U;
 	igl::point_mesh_squared_distance(sourceVertices, targetVertices, targetFaces, sqrD, I, U);
 
+	Eigen::Vector3d m = sourceVertices.colwise().minCoeff();
+	Eigen::Vector3d M = sourceVertices.colwise().maxCoeff();
+	double threshold = (M - m).squaredNorm() * 0.0625;
+
 	int numVertices = sourceVertices.rows();
 	Eigen::VectorXi w = Eigen::VectorXi::Ones(numVertices);
 
 	for (int i = 0; i < numVertices; ++i) {
 		bool prune = false;
+
+		if (sqrD[i] > threshold) {
+			prune = true;
+			w[i] = 0;
+			continue;
+		}
 #if 1
 		// avoid boundary sampling
 		auto& face = targetFaces.row(I[i]);
@@ -127,13 +137,18 @@ void deform_match(
 
 	Eigen::MatrixXd X;
 	X.resize(b.size(), 3);
-	double alpha = 0.5;
+	double alpha = 0.9;
 	for (int i = 0; i < b.size(); ++i) {
 		int idx = b[i];
 		X.row(i) = U.row(idx)*alpha + sourceVertices.row(idx)*(1.f-alpha);
 	}
 #endif
+	// h  dynamics time step
+	arap_data.h = 1;
+	// ym  ~Young's modulus smaller is softer, larger is more rigid/stiff
+	arap_data.ym = 0.1;
 	//arap_data.max_iter = 100;
+	//arap_data.with_dynamics = true;
 	igl::arap_precomputation(sourceVertices, sourceFaces, sourceVertices.cols(), b, arap_data);
 	igl::arap_solve(X, arap_data, sourceVertices);
 

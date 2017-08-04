@@ -31,16 +31,16 @@ int main(int argc, char *argv[])
   Eigen::MatrixXd OVX,VX,VY,OVY;
   Eigen::MatrixXi FX,FY;
   igl::read_triangle_mesh(
-	(argc>1 ? argv[1] : "../data/max-registration-simple.obj"), OVX, FX);
+	(argc>1 ? argv[1] : "../data/male.obj"), OVX, FX);
   igl::read_triangle_mesh(
-    (argc>2 ? argv[2] : "../data/max-registration-complete.obj"), VY, FY);
+    (argc>2 ? argv[2] : "../data/template.obj"), VY, FY);
+  //VY.col(1) *= 0.75;
 /*
   Eigen::MatrixXi I;
   Eigen::MatrixXd target_landmarks;
   igl::read_triangle_mesh(
 	  (argc>3 ? argv[3] : "../data/male_feature.obj"), target_landmarks, I);
 */
-
 
   igl::per_face_normals(VY, FY, NFY);
   igl::per_vertex_normals(VY, FY, NVY);
@@ -49,15 +49,18 @@ int main(int argc, char *argv[])
   // Find the bounding box and normalize data
   Eigen::Vector3d m = VY.colwise().minCoeff();
   Eigen::Vector3d M = VY.colwise().maxCoeff();
-  Eigen::Vector3d c = (m + M)*0.5f;
-  float scale = (M[0] - m[0]);
+  Eigen::Vector3d cy = (m + M)*0.5f;
+  const float scale = (M[0] - m[0]);
 
   m = OVX.colwise().minCoeff();
   M = OVX.colwise().maxCoeff();
-  float inv_scale = scale / (M[0] - m[0]);
-  Eigen::RowVector3d offset(c[0], c[1], c[2] + 1);
+  Eigen::Vector3d cx = (m + M)*0.5f;
+  const float inv_scale = scale / (M[0] - m[0]);
+  Eigen::RowVector3d offset(cy[0], cy[1], cy[2] + 1);
+  //OVX.rowwise() -= cx.transpose();
   OVX *= inv_scale;
-  OVX.rowwise() += offset;
+  std::cout << "scale: " << inv_scale << std::endl;
+  //OVX.rowwise() += cy.transpose();
 #elif 1
 #else
 	// Find the bounding box and normalize data
@@ -75,6 +78,7 @@ int main(int argc, char *argv[])
 	OVX.rowwise() += offset;
 #endif
 
+#if 0
 	igl::readDMAT("../data/male.dmat", target_landmarks);
 	Eigen::MatrixXd target_landmark_points;
 	target_landmark_points.resize(nojaw, 3);
@@ -89,11 +93,35 @@ int main(int argc, char *argv[])
 		template_landmark_points.row(i) = VY.row(template_landmarks.row(i )[0]);
 	}
 
-#if 1
 	// align landmarks
 	Eigen::Matrix3d R;
 	Eigen::RowVector3d  t;
 	for (int i = 0; i < 3; ++i)
+	{
+		point_to_point_rigid_matching(target_landmark_points, template_landmark_points, R, t);
+		target_landmark_points = ((target_landmark_points*R).rowwise() + t).eval();
+		OVX = ((OVX*R).rowwise() + t).eval();
+	}
+#else
+	Eigen::MatrixXi I;
+	Eigen::MatrixXd target_landmark_points;
+	igl::read_triangle_mesh(
+		(argc>3 ? argv[3] : "../data/male_feature.obj"), target_landmark_points, I);
+	//target_landmark_points.rowwise() -= cx.transpose();
+	target_landmark_points *= inv_scale;
+
+	igl::readDMAT(
+		(argc>4 ? argv[4] : "../data/template.dmat"), template_landmarks);
+	Eigen::MatrixXd template_landmark_points;
+	template_landmark_points.resize(template_landmarks.rows(), 3);
+	for (int i = 0, c = template_landmarks.rows(); i < c; ++i) {
+		template_landmark_points.row(i) = VY.row(template_landmarks.row(i)[0]);
+	}
+
+	// align landmarks
+	Eigen::Matrix3d R;
+	Eigen::RowVector3d  t;
+	for (int i = 0; i < 1; ++i)
 	{
 		point_to_point_rigid_matching(target_landmark_points, template_landmark_points, R, t);
 		target_landmark_points = ((target_landmark_points*R).rowwise() + t).eval();
@@ -165,7 +193,7 @@ int main(int argc, char *argv[])
   };
   const auto & set_points = [&]()
   {
-#if 1
+#if 0
     Eigen::MatrixXd X,P;
     random_points_on_mesh(num_samples,VX,FX,X);
     Eigen::VectorXd D;
