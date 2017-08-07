@@ -28,7 +28,7 @@ void point_to_point_rigid_matching(
 	igl::polar_svd(S, ri, ti, ui, singular, vi);
 	assert(ri.determinant() >= 0);
 	R = ri.transpose();
-	std::cout << singular << std::endl << std::endl;
+	//std::cout << singular << std::endl << std::endl;
 #endif
 
 	t = cp - cx * R;

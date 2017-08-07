@@ -7,6 +7,8 @@
 #include <igl/read_triangle_mesh.h>
 #include <igl/viewer/Viewer.h>
 #include <igl/readDMAT.h>
+#include <igl/writeOBJ.h>
+#include <igl/point_mesh_squared_distance.h>
 
 #include <Eigen/Core>
 #include <string>
@@ -27,14 +29,28 @@ int main(int argc, char *argv[])
 {
   srand(time(0));
 
+  Eigen::MatrixXd TC, N;
+  Eigen::MatrixXi FTC, FN;
   // Load input meshes
   Eigen::MatrixXd OVX,VX,VY,OVY;
   Eigen::MatrixXi FX,FY;
-  igl::read_triangle_mesh(
-	(argc>1 ? argv[1] : "../data/male.obj"), OVX, FX);
+  igl::readOBJ(
+	(argc>1 ? argv[1] : "../data/male.obj"), OVX, TC, N, FX, FTC, FN);
   igl::read_triangle_mesh(
     (argc>2 ? argv[2] : "../data/template.obj"), VY, FY);
   //VY.col(1) *= 0.75;
+
+#if 1
+  Eigen::MatrixXd vt;
+  Eigen::MatrixXi ft;
+  Eigen::VectorXi mapping;
+  weld_vertices(VY, FY, vt, ft, mapping);
+  VY = vt;
+  FY = ft;
+#endif
+  std::cout << "target vertices: " << OVX.rows() << ", texCoords: " << TC.rows() << ", triangles: " << FX.rows() << std::endl;
+  std::cout << "template vertices: " << VY.rows() << ", triangles: " << FY.rows() << std::endl;
+
 /*
   Eigen::MatrixXi I;
   Eigen::MatrixXd target_landmarks;
@@ -115,7 +131,9 @@ int main(int argc, char *argv[])
 	Eigen::MatrixXd template_landmark_points;
 	template_landmark_points.resize(template_landmarks.rows(), 3);
 	for (int i = 0, c = template_landmarks.rows(); i < c; ++i) {
-		template_landmark_points.row(i) = VY.row(template_landmarks.row(i)[0]);
+		int idx = mapping[template_landmarks.row(i)[0]];
+		template_landmark_points.row(i) = VY.row(idx);
+		//template_landmark_points.row(i) = VY.row(template_landmarks.row(i)[0]);
 	}
 
 	// align landmarks
@@ -311,6 +329,30 @@ int main(int argc, char *argv[])
 		  VY = OY;
 		  set_meshes(2);
 	  }
+		  break;
+	case 'e':
+	{
+		// save deformed template with target texture coordinates
+		Eigen::VectorXd sqrD;
+		Eigen::VectorXi I;
+		Eigen::MatrixXd U, tcY, nY;
+		Eigen::MatrixXi fny;
+		igl::AABB<Eigen::MatrixXd, 3> tree;
+		tree.init(VX, FX);
+		tree.squared_distance(VX, FX, VY, sqrD, I, U);
+
+		tcY.resize(VY.rows(), 2);
+		igl::Hit hit;
+		for (int i = 0, c = I.size(); i < c; ++i) {
+			auto dir = U.row(i) - VY.row(i);
+			
+			if (tree.intersect_ray(VX, FX, VY.row(i), dir.normalized(), hit)) {
+				const auto &face = FTC.row(hit.id);
+				tcY.row(i) = TC.row(face[0])*hit.v + TC.row(face[1])*hit.u + TC.row(face[2])*(1 - hit.u - hit.v);
+			}
+		}
+		igl::writeOBJ("test.obj", VY, FY, nY, fny, tcY, FY);
+	}
 		  break;
 #if 1
 	  case 'u':

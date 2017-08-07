@@ -8,6 +8,7 @@
 #include <igl/boundary_loop.h>
 #include <igl/ray_mesh_intersect.h>
 #include <igl/per_vertex_normals.h>
+#include <igl/writeDMAT.h>
 
 //igl::ARAPData *arap_data = nullptr;
 igl::ARAPData arap_data;
@@ -336,3 +337,45 @@ void deform_solve(Eigen::MatrixXd & output,
 
 #endif
 
+
+void weld_vertices(const Eigen::MatrixXd & sourceVertices, const Eigen::MatrixXi & sourceFaces,
+	Eigen::MatrixXd & outVertices, Eigen::MatrixXi & outFaces, Eigen::VectorXi & mapping)
+{
+	const int size = sourceVertices.rows();
+
+	mapping.resize(size);
+	outFaces.conservativeResizeLike(sourceFaces);
+	outVertices.conservativeResizeLike(sourceVertices);
+
+	int count = 0;
+	for (int i = 0; i < size; ++i) {
+		bool unique = true;
+		const auto & vi = sourceVertices.row(i);
+		for (int j = 0; j < count; ++j) {
+			const auto vj = outVertices.row(j);
+			if (vj[0] == vi[0] &&
+				vj[1] == vi[1] &&
+				vj[2] == vi[2] ) 
+			{
+				mapping[i] = j;
+				unique = false;
+				break;
+			}
+		}
+		if (unique) {
+			mapping[i] = count;
+			outVertices.row(count) = vi;
+			++count;
+		}
+	}
+	std::cout << "original vertices: " << size << std::endl;
+	std::cout << "unique vertices: " << count << std::endl;
+	outVertices.conservativeResize(count, sourceVertices.cols());
+
+	for (int i = 0, c = sourceFaces.rows(); i < c; ++i) {
+		for (int j = 0; j < 3; ++j) {
+			int idx = sourceFaces(i, j);
+			outFaces(i, j) = mapping[idx];
+		}
+	}
+}

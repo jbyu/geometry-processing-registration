@@ -122,11 +122,11 @@ inline void TransfromVertices(Eigen::MatrixXd & out, const Eigen::MatrixXd& in, 
 }
 
 int OptimalNonrigidICP::compute(float alpha, float epsilon, Eigen::MatrixXd& deformed) {
-	const int kMaxIteration = 10;
+	const int kMaxIteration = 16;
 	int iteration = 0;
 	float error = 0;
 	alpha = 10;
-	epsilon = 1;
+	epsilon = 1e-1;
 
 	Eigen::Vector3d m = vTemplate.colwise().minCoeff();
 	Eigen::Vector3d M = vTemplate.colwise().maxCoeff();
