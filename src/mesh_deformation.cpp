@@ -9,6 +9,7 @@
 #include <igl/ray_mesh_intersect.h>
 #include <igl/per_vertex_normals.h>
 #include <igl/writeDMAT.h>
+#include <igl/writeOBJ.h>
 
 //igl::ARAPData *arap_data = nullptr;
 igl::ARAPData arap_data;
@@ -378,4 +379,60 @@ void weld_vertices(const Eigen::MatrixXd & sourceVertices, const Eigen::MatrixXi
 			outFaces(i, j) = mapping[idx];
 		}
 	}
+}
+
+void saveWithTexcoord(const std::string & filename,
+	const Eigen::MatrixXd & templateVertices,
+	const Eigen::MatrixXi & templateFaces,
+	const Eigen::MatrixXd & sourceVertices,
+	const Eigen::MatrixXi & sourceFaces,
+	const Eigen::MatrixXd & sourceTexcoords,
+	const Eigen::MatrixXi & sourceTexFaces)
+{
+	Eigen::VectorXd sqrD;
+	Eigen::VectorXi I, fny;
+	Eigen::MatrixXd U, tcY, nY;
+	const int size = templateVertices.rows();
+	tcY.resize(size, 2);
+	igl::point_mesh_squared_distance(templateVertices, sourceVertices, sourceFaces, sqrD, I, U);
+
+	Eigen::MatrixXd templateNormals;
+	igl::per_vertex_normals(templateVertices, templateFaces, templateNormals);
+
+	double t, u, v;
+	for (int i = 0; i < size; ++i) {
+		const int idx = I[i];
+		const auto & vface = sourceFaces.row(idx);
+		const auto & tface = sourceTexFaces.row(idx);
+		Eigen::RowVector3d nrm = templateNormals.row(i);
+		Eigen::RowVector3d s_d = templateVertices.row(i);
+		Eigen::RowVector3d dir_d = (U.row(i) - s_d).normalized();
+		Eigen::RowVector3d v0 = sourceVertices.row(vface[0]);
+		Eigen::RowVector3d v1 = sourceVertices.row(vface[1]);
+		Eigen::RowVector3d v2 = sourceVertices.row(vface[2]);
+
+		if (intersect_triangle1(s_d.data(), dir_d.data(), v0.data(), v1.data(), v2.data(), &t, &u, &v)) {
+		}
+		else if (intersect_triangle1(s_d.data(), nrm.data(), v0.data(), v1.data(), v2.data(), &t, &u, &v)) {
+		}
+		else {
+			t = 0;
+			u = 0;
+			v = 0;
+		}
+		tcY.row(i) = sourceTexcoords.row(tface[0])*(1 - u - v) + sourceTexcoords.row(tface[1])*u + sourceTexcoords.row(tface[2])*v;
+#if 0
+		else {
+			std::cout << i << std::endl;
+			std::cout << idx << std::endl;
+			std::cout << vface << std::endl;
+			std::cout << s_d << std::endl;
+			std::cout << dir_d << std::endl;
+			std::cout << v0 << std::endl;
+			std::cout << v1 << std::endl;
+			std::cout << v2 << std::endl << std::endl;
+		}
+#endif
+	}
+	igl::writeOBJ(filename, templateVertices, templateFaces, nY, fny, tcY, templateFaces);
 }

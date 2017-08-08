@@ -14,7 +14,8 @@ protected:
 	Eigen::MatrixXi fTarget, fTemplate;
 
 	Eigen::MatrixXd targetNormals;
-	Eigen::VectorXi boundary;
+	Eigen::VectorXi targetBoundary;
+	Eigen::VectorXi templateBoundary;
 
 	igl::AABB<Eigen::MatrixXd, 3> _tree;
 

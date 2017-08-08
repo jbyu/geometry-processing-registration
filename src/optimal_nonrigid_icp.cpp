@@ -2,7 +2,7 @@
 
 #include <vector>
 #include <Eigen/IterativeLinearSolvers>
-#include <unsupported/Eigen/KroneckerProduct>
+//#include <unsupported/Eigen/KroneckerProduct>
 
 #include <igl/diag.h>
 #include <igl/cat.h>
@@ -29,10 +29,8 @@ void OptimalNonrigidICP::init(const Eigen::MatrixXd& vt, const Eigen::MatrixXi& 
 
 	std::cout << "gather boundary." << std::endl;
 	//Detect of the boundary vertices
-	igl::boundary_loop(fTarget, boundary);
-
-	//Eigen::SparseMatrix<int> A;
-	//igl::adjacency_matrix(fTarget, A);
+	igl::boundary_loop(fTarget, targetBoundary);
+	igl::boundary_loop(fTemplate, templateBoundary);
 
 	// setup edge info.
 	std::vector<Edge> edges;
@@ -112,12 +110,10 @@ void OptimalNonrigidICP::init(const Eigen::MatrixXd& vt, const Eigen::MatrixXi& 
 	std::cout << "initial completed." << std::endl;
 }
 
-inline void TransfromVertices(Eigen::MatrixXd & out, const Eigen::MatrixXd& in, const Eigen::MatrixXd& X)
+inline void TransfromVertices(Eigen::MatrixXd & out, const Eigen::MatrixXd& in, const Eigen::MatrixXd& xf)
 {
-	const int count = in.rows();
-	out(count, 3);
-	for (int i = 0; i < count; ++i) {
-		out.row(i) = in.row(i) * X.block(4 * i, 0, 3, 3) + X.row(4 * i + 3);
+	for (int i = 0, c = in.rows(); i < c; ++i) {
+		out.row(i) = in.row(i) * xf.block(4 * i, 0, 3, 3) + xf.row(4 * i + 3);
 	}
 }
 
@@ -125,23 +121,22 @@ int OptimalNonrigidICP::compute(float alpha, float epsilon, Eigen::MatrixXd& def
 	const int kMaxIteration = 16;
 	int iteration = 0;
 	float error = 0;
-	alpha = 10;
-	epsilon = 1e-1;
+	bool preserveBoundary = true;
 
+	alpha = 10;
+	epsilon = 1;
+
+	Eigen::MatrixXd transformed(_numVertices, 3);
 	Eigen::Vector3d m = vTemplate.colwise().minCoeff();
 	Eigen::Vector3d M = vTemplate.colwise().maxCoeff();
 	double threshold = (M - m).squaredNorm() * 0.0625;
 
-	Eigen::MatrixXd transformed(_numVertices, 3);
-
-	while (alpha >= 1) {
+	while (alpha > 0) {
 		do {
 			std::cout << "================= " << ++iteration << "th iteration" << " =================" << std::endl;
 			std::cout << "alpha: " << alpha << std::endl;
 			// Transform source points by current transformation matrix X
-			for (int i = 0; i < _numVertices; ++i) {
-				transformed.row(i) = vTemplate.row(i) * X.block(4 * i, 0, 3, 3) + X.row(4 * i + 3);
-			}
+			TransfromVertices(transformed, vTemplate, X);
 
 			std::cout << "find closest points." << std::endl;
 			// Determine closest points on target U to transformed source points.
@@ -158,22 +153,21 @@ int OptimalNonrigidICP::compute(float alpha, float epsilon, Eigen::MatrixXd& def
 			int count = 0;
 			const float kMissing = 0;
 			for (int i = 0; i < _numVertices; ++i) {
-				bool prune = false;
-
 				// avoid far away point
 				if (sqrD[i] > threshold) {
-					prune = true;
-					wVec[i] = 0;
+					wVec[i] = kMissing;
+					++count;
 					continue;
 				}
 
 				// avoid boundary sampling
-				auto & face = fTarget.row(I[i]);
 				wVec[i] = 1;
-				for (int j = 0, c = boundary.size(); j < c; ++j) {
-					if (boundary[j] == face[0] ||
-						boundary[j] == face[1] ||
-						boundary[j] == face[2])
+				bool prune = false;
+				auto & face = fTarget.row(I[i]);
+				for (int j = 0, c = targetBoundary.size(); j < c; ++j) {
+					if (targetBoundary[j] == face[0] ||
+						targetBoundary[j] == face[1] ||
+						targetBoundary[j] == face[2])
 					{
 						wVec[i] = kMissing;
 						++count;
@@ -235,13 +229,23 @@ int OptimalNonrigidICP::compute(float alpha, float epsilon, Eigen::MatrixXd& def
 						&t, &u, &v) && t > 0 && t < distance)
 					{
 						wVec[i] = kMissing;
-						++prune;
+						++count;
 						break;
 					}
 				}
 			}
 			std::cout << count << " points" << std::endl;
 #endif
+
+			//preserve boundary of template
+			if (preserveBoundary) {
+				for (int i = 0, c = templateBoundary.size(); i < c; ++i) {
+					int idx = templateBoundary[i];
+					wVec[idx] = 1;
+					U.row(idx) = vTemplate.row(idx);
+				}
+			}
+
 			std::cout << "update weights." << std::endl;
 			// Update weight matrix
 			Eigen::SparseMatrix<double> W;
@@ -289,9 +293,7 @@ int OptimalNonrigidICP::compute(float alpha, float epsilon, Eigen::MatrixXd& def
 	}
 
 	deformed.resize(_numVertices, 3);
-	for (int i = 0; i < _numVertices; ++i) {
-		deformed.row(i) = vTemplate.row(i) * X.block(4 * i, 0, 3, 3) + X.row(4 * i + 3);
-	}
+	TransfromVertices(deformed, vTemplate, X);
 
 	return 0;
 }

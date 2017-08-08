@@ -331,29 +331,9 @@ int main(int argc, char *argv[])
 	  }
 		  break;
 	case 'e':
-	{
 		// save deformed template with target texture coordinates
-		Eigen::VectorXd sqrD;
-		Eigen::VectorXi I;
-		Eigen::MatrixXd U, tcY, nY;
-		Eigen::MatrixXi fny;
-		igl::AABB<Eigen::MatrixXd, 3> tree;
-		tree.init(VX, FX);
-		tree.squared_distance(VX, FX, VY, sqrD, I, U);
-
-		tcY.resize(VY.rows(), 2);
-		igl::Hit hit;
-		for (int i = 0, c = I.size(); i < c; ++i) {
-			auto dir = U.row(i) - VY.row(i);
-			
-			if (tree.intersect_ray(VX, FX, VY.row(i), dir.normalized(), hit)) {
-				const auto &face = FTC.row(hit.id);
-				tcY.row(i) = TC.row(face[0])*hit.v + TC.row(face[1])*hit.u + TC.row(face[2])*(1 - hit.u - hit.v);
-			}
-		}
-		igl::writeOBJ("test.obj", VY, FY, nY, fny, tcY, FY);
-	}
-		  break;
+		saveWithTexcoord("test.obj", VY, FY, VX, FX, TC, FTC);
+		break;
 #if 1
 	  case 'u':
 		  deform_match(VY, FY, template_landmarks, VX, FX, target_landmarks);

@@ -24,5 +24,14 @@ void deform_solve(Eigen::MatrixXd & output,
 void weld_vertices(const Eigen::MatrixXd & sourceVertices, const Eigen::MatrixXi & sourceFaces,
 	Eigen::MatrixXd & outVertices, Eigen::MatrixXi & outFaces, Eigen::VectorXi & mapping);
 
+void saveWithTexcoord(const std::string & filename,
+	const Eigen::MatrixXd & templateVertices,
+	const Eigen::MatrixXi & templateFaces,
+	const Eigen::MatrixXd & sourceVertices,
+	const Eigen::MatrixXi & sourceFaces,
+	const Eigen::MatrixXd & sourceTexcoords,
+	const Eigen::MatrixXi & sourceTexFaces);
+
+
 #endif//MESH_DEFORMATION_H
 
