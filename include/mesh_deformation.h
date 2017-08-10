@@ -30,7 +30,10 @@ void saveWithTexcoord(const std::string & filename,
 	const Eigen::MatrixXd & sourceVertices,
 	const Eigen::MatrixXi & sourceFaces,
 	const Eigen::MatrixXd & sourceTexcoords,
-	const Eigen::MatrixXi & sourceTexFaces);
+	const Eigen::MatrixXi & sourceTexFaces,
+	const Eigen::VectorXi & mapping,
+	const Eigen::MatrixXi & originalFaces
+	);
 
 
 #endif//MESH_DEFORMATION_H

@@ -387,7 +387,9 @@ void saveWithTexcoord(const std::string & filename,
 	const Eigen::MatrixXd & sourceVertices,
 	const Eigen::MatrixXi & sourceFaces,
 	const Eigen::MatrixXd & sourceTexcoords,
-	const Eigen::MatrixXi & sourceTexFaces)
+	const Eigen::MatrixXi & sourceTexFaces,
+	const Eigen::VectorXi & mapping,
+	const Eigen::MatrixXi & originalFaces)
 {
 	Eigen::VectorXd sqrD;
 	Eigen::VectorXi I, fny;
@@ -416,7 +418,6 @@ void saveWithTexcoord(const std::string & filename,
 		else if (intersect_triangle1(s_d.data(), nrm.data(), v0.data(), v1.data(), v2.data(), &t, &u, &v)) {
 		}
 		else {
-			t = 0;
 			u = 0;
 			v = 0;
 		}
@@ -434,5 +435,17 @@ void saveWithTexcoord(const std::string & filename,
 		}
 #endif
 	}
-	igl::writeOBJ(filename, templateVertices, templateFaces, nY, fny, tcY, templateFaces);
+	
+	//igl::writeOBJ("weld.obj", templateVertices, templateFaces, nY, fny, tcY, templateFaces);
+	const int num = mapping.size();
+	Eigen::MatrixXd origVTX;
+	Eigen::MatrixXd origTC;
+	origVTX.resize(num, 3);
+	origTC.resize(num, 2);
+	for (int i = 0; i < num; ++i) {
+		int idx = mapping[i];
+		origVTX.row(i) = templateVertices.row(idx);
+		origTC.row(i) = tcY.row(idx);
+	}
+	igl::writeOBJ(filename, origVTX, originalFaces, nY, fny, origTC, originalFaces);
 }

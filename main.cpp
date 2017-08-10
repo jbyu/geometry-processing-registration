@@ -41,6 +41,7 @@ int main(int argc, char *argv[])
   //VY.col(1) *= 0.75;
 
 #if 1
+  Eigen::MatrixXi origFY = FY;
   Eigen::MatrixXd vt;
   Eigen::MatrixXi ft;
   Eigen::VectorXi mapping;
@@ -332,7 +333,7 @@ int main(int argc, char *argv[])
 		  break;
 	case 'e':
 		// save deformed template with target texture coordinates
-		saveWithTexcoord("test.obj", VY, FY, VX, FX, TC, FTC);
+		saveWithTexcoord("test.obj", VY, FY, VX, FX, TC, FTC, mapping, origFY);
 		break;
 #if 1
 	  case 'u':
